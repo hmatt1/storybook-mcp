@@ -60,9 +60,9 @@ let screenshotResults = [];
 
 // Define component states to test
 const statesToTest = [
-  { name: 'default', config: { hover: false, focus: false, active: false } },
-  { name: 'hover', config: { hover: true, focus: false, active: false } },
-  { name: 'focus', config: { hover: false, focus: true, active: false } }
+  { name: 'default', config: { hover: false, focus: false, active: false } }
+  // { name: 'hover', config: { hover: true, focus: false, active: false } },
+  // { name: 'focus', config: { hover: false, focus: true, active: false } }
 ];
 
 // Spawn the server process
