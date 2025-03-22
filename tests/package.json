@@ -4,6 +4,7 @@
   "description": "Integration tests for MCP server",
   "type": "module",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.7.0",
     "axios": "^1.6.0",
     "chai": "^4.3.7",
     "fs-extra": "^11.1.1"

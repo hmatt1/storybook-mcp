@@ -1,4 +1,4 @@
-import { chromium, Browser, BrowserContext } from 'playwright';
+import { chromium, Browser, BrowserContext, Page } from 'playwright';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import * as url from 'url';
@@ -61,6 +61,99 @@ function getStateString(state: ComponentState): string {
 }
 
 /**
+ * Detect Storybook version from the page
+ * @param {Page} page - Playwright page object
+ * @returns {Promise<number>} - Major version number (6, 7, or 8)
+ */
+async function detectStorybookVersion(page: Page): Promise<number> {
+  try {
+    // Try to detect version from the HTML
+    const versionFromMeta = await page.evaluate(() => {
+      const metaElement = document.querySelector('meta[name="storybook-version"]');
+      return metaElement ? metaElement.getAttribute('content') : null;
+    });
+    
+    if (versionFromMeta) {
+      const majorVersion = parseInt(versionFromMeta.split('.')[0], 10);
+      console.log(`Detected Storybook version ${versionFromMeta} from meta tag`);
+      return majorVersion;
+    }
+    
+    // Try to detect based on UI elements and API
+    return await page.evaluate(() => {
+      const win = window as any;
+      
+      // Storybook 8 specific elements
+      if (document.querySelector('.sidebar-header--menu')) {
+        return 8;
+      }
+      
+      // Check for Storybook 8 API structure
+      if (win.__STORYBOOK_STORY_STORE__?.storyIndex?.entries) {
+        return 8;
+      }
+      
+      // Check for Storybook 7 API structure
+      if (win.__STORYBOOK_STORY_STORE__?.getStoriesJsonData) {
+        return 7;
+      }
+      
+      // Default to version 6 if we can't detect
+      return 6;
+    });
+  } catch (error) {
+    console.log('Error detecting Storybook version:', error);
+    return 6; // Default to oldest supported version
+  }
+}
+
+/**
+ * Apply state to a component in the page (hover, focus, active)
+ * @param {Page} page - Playwright page object
+ * @param {ComponentState} state - Component state to apply
+ * @param {number} sbVersion - Storybook version
+ * @returns {Promise<void>}
+ */
+async function applyComponentState(page: Page, state: ComponentState, sbVersion: number): Promise<void> {
+  // Create a serializable state object with just the boolean values
+  const stateObj = {
+    hover: state.hover || false,
+    focus: state.focus || false,
+    active: state.active || false
+  };
+  
+  // Pass only the state object to the evaluate function
+  await page.evaluate((serializedState) => {
+    // Determine which selector to use based on what's available in the DOM
+    // This adapts to different Storybook versions
+    const version = parseInt((window as any).__STORYBOOK_VERSION || '6', 10);
+    
+    let root;
+    if (version >= 8) {
+      // Try different selectors for Storybook 8
+      root = document.querySelector('#storybook-root > *, #root > *, [data-story-block="true"] > *');
+    } else {
+      // Older versions of Storybook
+      root = document.querySelector('#storybook-root > *');
+    }
+    
+    if (root) {
+      if (serializedState.hover) {
+        root.classList.add('sb-pseudo-hover');
+      }
+      if (serializedState.focus) {
+        root.classList.add('sb-pseudo-focus');
+      }
+      if (serializedState.active) {
+        root.classList.add('sb-pseudo-active');
+      }
+    } else {
+      console.error('Root component element not found');
+    }
+  }, stateObj);
+}
+
+/**
  * Capture a screenshot of a Storybook component
  * 
  * This function navigates to a specific component in Storybook, applies
@@ -97,6 +190,15 @@ export async function captureComponent(options: CaptureOptions): Promise<Capture
       height: viewport.height
     });
     
+    // First, visit the main Storybook page to detect the version
+    await page.goto(storybookUrl, { 
+      timeout: 30000, 
+      waitUntil: 'networkidle' 
+    });
+    
+    const storybookVersion = await detectStorybookVersion(page);
+    console.log(`Detected Storybook version ${storybookVersion}`);
+    
     // Process the component ID to extract the base ID without the variant
     // Format is usually "componentname--variantname"
     let componentId = component;
@@ -113,8 +215,17 @@ export async function captureComponent(options: CaptureOptions): Promise<Capture
     }
     
     // Construct URL for specific component and variant
-    // The format is: storybookUrl?path=/story/{storyId}
-    const componentUrl = `${storybookUrl}?path=/story/${encodeURIComponent(storyId)}`;
+    // The path format can vary by Storybook version
+    let componentUrl;
+    
+    // For Storybook 7+ we use a slightly different URL format
+    if (storybookVersion >= 7) {
+      componentUrl = `${storybookUrl}?path=/story/${encodeURIComponent(storyId)}`;
+    } else {
+      // Legacy format for Storybook 6
+      componentUrl = `${storybookUrl}?path=/story/${encodeURIComponent(storyId)}`;
+    }
+    
     console.log(`Navigating to: ${componentUrl}`);
     
     // Go to the URL and wait for navigation to complete with a generous timeout
@@ -125,24 +236,17 @@ export async function captureComponent(options: CaptureOptions): Promise<Capture
     }
     
     // Wait for the component to be fully rendered
-    await page.waitForSelector('#storybook-root', { timeout: 10000 });
+    // In Storybook 8, the selector might be different
+    await page.waitForSelector('#storybook-root, #storybook-preview-wrapper', { timeout: 10000 });
     
-    // Apply component state (hover, focus, etc.) by adding appropriate classes
-    // Storybook uses special classes (sb-pseudo-*) to simulate different states
-    await page.evaluate((stateObj: ComponentState) => {
-      const root = document.querySelector('#storybook-root > *');
-      if (root) {
-        if (stateObj.hover) {
-          root.classList.add('sb-pseudo-hover');
-        }
-        if (stateObj.focus) {
-          root.classList.add('sb-pseudo-focus');
-        }
-        if (stateObj.active) {
-          root.classList.add('sb-pseudo-active');
-        }
-      }
-    }, state);
+    // In Storybook 8, wait for "story rendered" indicator
+    if (storybookVersion >= 8) {
+      await page.waitForSelector('[data-story-rendered="true"]', { timeout: 5000 })
+        .catch(() => console.log('Story rendered indicator not found, proceeding anyway'));
+    }
+    
+    // Apply component state using the helper function
+    await applyComponentState(page, state, storybookVersion);
     
     // Give the state a moment to take effect
     await page.waitForTimeout(100);

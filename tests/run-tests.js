@@ -1,14 +1,15 @@
-import axios from 'axios';
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import fs from 'fs-extra';
-import { strict as assert } from 'assert';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import axios from 'axios';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Configuration
-const MCP_SERVER_URL = process.env.MCP_SERVER_URL || 'http://localhost:3000';
+// Configuration - use environment variables for Docker compatibility
+const MCP_SERVER_URL = process.env.MCP_SERVER_URL || 'http://localhost:3001';
 const OUTPUT_DIR = process.env.OUTPUT_DIR || path.join(__dirname, '../test-output');
 
 // Create output directory if it doesn't exist
@@ -47,7 +48,7 @@ async function testStorybookRunning() {
     const healthResponse = await axios.get(`${MCP_SERVER_URL}/health`);
     if (healthResponse.data && healthResponse.data.storybookUrl) {
       console.log(`Storybook URL from health check: ${healthResponse.data.storybookUrl}`);
-      
+
       // Try to access Storybook directly
       try {
         await axios.get(`http://storybook:6006`);
@@ -59,7 +60,7 @@ async function testStorybookRunning() {
     } else {
       console.log('No Storybook URL in health response');
     }
-    
+
     return true;
   } catch (error) {
     logTest('Storybook Connection Test', false, `Failed to test Storybook: ${error.message}`);
@@ -67,92 +68,144 @@ async function testStorybookRunning() {
   }
 }
 
+// Initialize MCP client and connect to server
+async function initMcpClient() {
+  try {
+    console.log('Initializing MCP client...');
+    
+    // Generate a session ID
+    const sessionId = `test-session-${Date.now()}`;
+    console.log(`Using session ID: ${sessionId}`);
+
+    // Create SSE transport to connect to the MCP server
+    const transport = new SSEClientTransport({
+      baseUrl: MCP_SERVER_URL,
+      sseEndpoint: "/sse",
+      messageEndpoint: "/messages",
+      sessionId: sessionId
+    });
+    
+    // Create client
+    const client = new Client(
+      {
+        name: "test-client",
+        version: "1.0.0"
+      },
+      {
+        capabilities: {
+          prompts: {},
+          resources: {},
+          tools: {}
+        }
+      }
+    );
+    
+    console.log('Connecting to MCP transport...');
+    await client.connect(transport);
+    console.log('Connected successfully to MCP client');
+    
+    return { client, transport };
+  } catch (error) {
+    console.error('Error initializing MCP client:', error);
+    throw error;
+  }
+}
+
 // Test: Get components
-async function testGetComponents() {
+async function testGetComponents(client) {
   try {
     console.log('Testing components endpoint...');
-    // Making the request with a longer timeout
-    const response = await axios.post(`${MCP_SERVER_URL}/tools/components`, {}, {
-      timeout: 30000
+
+    // Call the components tool through MCP client
+    const response = await client.callTool({
+      name: "components",
+      arguments: {}
     });
     console.log('Got response from components endpoint');
-    
+
+    if (!response || !response.content || response.content.length === 0) {
+      throw new Error('No content in response');
+    }
+
+    // Parse the response content
+    const contentText = response.content[0].text;
+    const data = JSON.parse(contentText);
+
     // Log the raw response for debugging
-    console.log('Response data: ', JSON.stringify(response.data).substring(0, 500) + '...');
-    
-    const data = JSON.parse(response.data.content[0].text);
-    
+    console.log('Response data: ', JSON.stringify(data).substring(0, 500) + '...');
+
     // Verify we have components and success is true
     const success = data.success === true;
     const hasComponents = data.components && data.components.length > 0;
-    
+
     // Check for Button components specifically
-    const hasButtonComponents = data.components && data.components.some(comp => 
-      comp.id.includes('button') || comp.id.includes('Button')
+    const hasButtonComponents = data.components && data.components.some(comp =>
+        comp.id.includes('button') || comp.id.includes('Button')
     );
-    
-    logTest('Get Components', success && hasComponents, 
-      hasComponents ? `Found ${data.count} components` : 'No components found');
-    
+
+    logTest('Get Components', success && hasComponents,
+        hasComponents ? `Found ${data.count} components` : 'No components found');
+
     if (hasComponents) {
       console.log('Component IDs found:');
       data.components.forEach(comp => {
         console.log(`- ${comp.id} (${comp.variants.length} variants)`);
       });
     }
-    
-    logTest('Button Components', hasButtonComponents, 
-      hasButtonComponents ? 'Found Button components' : 'No Button components found');
-    
+
+    logTest('Button Components', hasButtonComponents,
+        hasButtonComponents ? 'Found Button components' : 'No Button components found');
+
     return data.components || [];
   } catch (error) {
     console.error('Complete error object:', error);
     logTest('Get Components', false, `Failed to get components: ${error.message}`);
-    
-    // Try to get more details about the error
-    if (error.response) {
-      console.log('Error response status:', error.response.status);
-      console.log('Error response data:', error.response.data);
-    }
-    
+
     return [];
   }
 }
 
 // Test: Capture component
-async function testCaptureComponent(componentId) {
+async function testCaptureComponent(client, componentId) {
   try {
     // Capture default state
-    const captureResponse = await axios.post(`${MCP_SERVER_URL}/tools/capture`, {
-      component: componentId,
-      variant: 'Default'
+    const captureResponse = await client.callTool({
+      name: "capture",
+      arguments: {
+        component: componentId,
+        variant: 'Default'
+      }
     });
-    
-    const data = JSON.parse(captureResponse.data.content[0].text);
-    
+
+    if (!captureResponse || !captureResponse.content || captureResponse.content.length === 0) {
+      throw new Error('No content in response');
+    }
+
+    const data = JSON.parse(captureResponse.content[0].text);
+
     // Wait for screenshot to be taken
     await sleep(2000);
-    
+
     // Extract the filename from the path
     const screenshotPath = data.screenshotPath;
     const filename = path.basename(screenshotPath);
     const outputPath = path.join(OUTPUT_DIR, filename);
-    
+
     // Check if screenshot file exists
     const screenshotExists = await fs.pathExists(outputPath);
-    
+
     // Check file size to ensure it's a valid image
     let fileSize = 0;
     if (screenshotExists) {
       const stats = await fs.stat(outputPath);
       fileSize = stats.size;
     }
-    
+
     const isValidScreenshot = screenshotExists && fileSize > 1000; // At least 1KB
-    
-    logTest(`Capture Component (${componentId})`, data.success && isValidScreenshot, 
-      isValidScreenshot ? `Screenshot created (${fileSize} bytes)` : 'Screenshot not created or invalid');
-    
+
+    logTest(`Capture Component (${componentId})`, data.success && isValidScreenshot,
+        isValidScreenshot ? `Screenshot created (${fileSize} bytes)` : 'Screenshot not created or invalid');
+
     return data.success && isValidScreenshot;
   } catch (error) {
     logTest(`Capture Component (${componentId})`, false, `Failed to capture component: ${error.message}`);
@@ -161,31 +214,38 @@ async function testCaptureComponent(componentId) {
 }
 
 // Test: Capture component in hover state
-async function testCaptureComponentHover(componentId) {
+async function testCaptureComponentHover(client, componentId) {
   try {
     // Capture hover state
-    const hoverResponse = await axios.post(`${MCP_SERVER_URL}/tools/capture`, {
-      component: componentId,
-      variant: 'Default',
-      state: { hover: true }
+    const hoverResponse = await client.callTool({
+      name: "capture",
+      arguments: {
+        component: componentId,
+        variant: 'Default',
+        state: { hover: true }
+      }
     });
-    
-    const data = JSON.parse(hoverResponse.data.content[0].text);
-    
+
+    if (!hoverResponse || !hoverResponse.content || hoverResponse.content.length === 0) {
+      throw new Error('No content in response');
+    }
+
+    const data = JSON.parse(hoverResponse.content[0].text);
+
     // Wait for screenshot to be taken
     await sleep(2000);
-    
+
     // Extract the filename from the path
     const screenshotPath = data.screenshotPath;
     const filename = path.basename(screenshotPath);
     const outputPath = path.join(OUTPUT_DIR, filename);
-    
+
     // Check if screenshot file exists
     const screenshotExists = await fs.pathExists(outputPath);
-    
-    logTest(`Capture Component Hover (${componentId})`, data.success && screenshotExists, 
-      screenshotExists ? 'Hover state captured' : 'Failed to capture hover state');
-    
+
+    logTest(`Capture Component Hover (${componentId})`, data.success && screenshotExists,
+        screenshotExists ? 'Hover state captured' : 'Failed to capture hover state');
+
     return data.success && screenshotExists;
   } catch (error) {
     logTest(`Capture Component Hover (${componentId})`, false, `Failed to capture hover state: ${error.message}`);
@@ -194,31 +254,38 @@ async function testCaptureComponentHover(componentId) {
 }
 
 // Test: Capture component at mobile viewport
-async function testCaptureResponsive(componentId) {
+async function testCaptureResponsive(client, componentId) {
   try {
     // Capture mobile viewport
-    const mobileResponse = await axios.post(`${MCP_SERVER_URL}/tools/capture`, {
-      component: componentId,
-      variant: 'Default',
-      viewport: { width: 375, height: 667 }
+    const mobileResponse = await client.callTool({
+      name: "capture",
+      arguments: {
+        component: componentId,
+        variant: 'Default',
+        viewport: { width: 375, height: 667 }
+      }
     });
-    
-    const data = JSON.parse(mobileResponse.data.content[0].text);
-    
+
+    if (!mobileResponse || !mobileResponse.content || mobileResponse.content.length === 0) {
+      throw new Error('No content in response');
+    }
+
+    const data = JSON.parse(mobileResponse.content[0].text);
+
     // Wait for screenshot to be taken
     await sleep(2000);
-    
+
     // Extract the filename from the path
     const screenshotPath = data.screenshotPath;
     const filename = path.basename(screenshotPath);
     const outputPath = path.join(OUTPUT_DIR, filename);
-    
+
     // Check if screenshot file exists
     const screenshotExists = await fs.pathExists(outputPath);
-    
-    logTest(`Capture Responsive (${componentId})`, data.success && screenshotExists, 
-      screenshotExists ? 'Mobile viewport captured' : 'Failed to capture mobile viewport');
-    
+
+    logTest(`Capture Responsive (${componentId})`, data.success && screenshotExists,
+        screenshotExists ? 'Mobile viewport captured' : 'Failed to capture mobile viewport');
+
     return data.success && screenshotExists;
   } catch (error) {
     logTest(`Capture Responsive (${componentId})`, false, `Failed to capture responsive: ${error.message}`);
@@ -229,7 +296,7 @@ async function testCaptureResponsive(componentId) {
 // Run all tests
 async function runTests() {
   console.log('Starting integration tests...');
-  
+
   // Wait for the server to be ready
   let serverReady = false;
   for (let i = 0; i < 10; i++) {
@@ -238,65 +305,79 @@ async function runTests() {
     if (serverReady) break;
     await sleep(3000);
   }
-  
+
   if (!serverReady) {
     console.log('Server not ready after multiple attempts. Aborting tests.');
     process.exit(1);
   }
-  
+
   // Check if Storybook is accessible
   await testStorybookRunning();
-  
-  // Get components
-  const components = await testGetComponents();
-  
-  if (!components || components.length === 0) {
-    console.log('No components found. Aborting tests.');
+
+  // Initialize MCP client
+  let client, transport;
+  try {
+    ({ client, transport } = await initMcpClient());
+  } catch (error) {
+    console.error('Failed to initialize MCP client:', error);
     process.exit(1);
   }
-  
-  // Select a button component for testing
-  const buttonComponent = components.find(comp => 
-    comp.id.includes('button--primary') || 
-    comp.id.includes('button') ||
-    comp.id.includes('Button')
-  );
-  
-  if (!buttonComponent) {
-    console.log('No button component found. Aborting tests.');
+
+  try {
+    // Get components
+    const components = await testGetComponents(client);
+
+    if (!components || components.length === 0) {
+      console.log('No components found. Aborting tests.');
+      process.exit(1);
+    }
+
+    // Select a button component for testing
+    const buttonComponent = components.find(comp =>
+        comp.id.includes('button--primary') ||
+        comp.id.includes('button') ||
+        comp.id.includes('Button')
+    );
+
+    if (!buttonComponent) {
+      console.log('No button component found. Aborting tests.');
+      process.exit(1);
+    }
+
+    console.log(`Using component: ${buttonComponent.id}`);
+
+    // Run capture tests
+    const captureTests = [
+      await testCaptureComponent(client, buttonComponent.id),
+      await testCaptureComponentHover(client, buttonComponent.id),
+      await testCaptureResponsive(client, buttonComponent.id)
+    ];
+
+    // Check if all capture tests passed
+    const allCaptureTestsPassed = captureTests.every(result => result);
+
+    // Check the output directory for screenshots
+    const files = await fs.readdir(OUTPUT_DIR);
+    const screenshotFiles = files.filter(file => file.endsWith('.png'));
+
+    logTest('Screenshot Count', screenshotFiles.length >= 3,
+        `Found ${screenshotFiles.length} screenshots`);
+
+    // List all screenshots
+    console.log('\nScreenshots generated:');
+    for (const file of screenshotFiles) {
+      console.log(`- ${file}`);
+    }
+
+    console.log('\nIntegration tests completed.');
+
+    // Set exit code based on test results
+    if (!allCaptureTestsPassed || screenshotFiles.length < 3) {
+      process.exitCode = 1;
+    }
+  } catch (error) {
+    console.error('Error during tests:', error);
     process.exit(1);
-  }
-  
-  console.log(`Using component: ${buttonComponent.id}`);
-  
-  // Run capture tests
-  const captureTests = [
-    await testCaptureComponent(buttonComponent.id),
-    await testCaptureComponentHover(buttonComponent.id),
-    await testCaptureResponsive(buttonComponent.id)
-  ];
-  
-  // Check if all capture tests passed
-  const allCaptureTestsPassed = captureTests.every(result => result);
-  
-  // Check the output directory for screenshots
-  const files = await fs.readdir(OUTPUT_DIR);
-  const screenshotFiles = files.filter(file => file.endsWith('.png'));
-  
-  logTest('Screenshot Count', screenshotFiles.length >= 3, 
-    `Found ${screenshotFiles.length} screenshots`);
-  
-  // List all screenshots
-  console.log('\nScreenshots generated:');
-  for (const file of screenshotFiles) {
-    console.log(`- ${file}`);
-  }
-  
-  console.log('\nIntegration tests completed.');
-  
-  // Set exit code based on test results
-  if (!allCaptureTestsPassed || screenshotFiles.length < 3) {
-    process.exitCode = 1;
   }
 }
 

@@ -8,8 +8,9 @@
  * @module index
  */
 
+import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { z } from "zod";
 import { captureComponent, closeBrowser } from "./screenshot.js";
 import { getComponents } from "./components.js";
@@ -22,11 +23,16 @@ import { startHealthServer, updateHealthConfig } from "./health.js";
  * Can be overridden with environment variables:
  * - STORYBOOK_URL: URL of your Storybook instance
  * - OUTPUT_DIR: Directory for screenshot output
+ * - PORT: Port for the Express server (default: 3001)
  */
 const config: ServerConfig = {
   storybookUrl: process.env.STORYBOOK_URL || 'http://localhost:6006',
-  outputDir: process.env.OUTPUT_DIR || './screenshots'
+  outputDir: process.env.OUTPUT_DIR || './screenshots',
+  port: parseInt(process.env.PORT || '3001')
 };
+
+// Store active transports for message routing
+const activeTransports = new Map<string, SSEServerTransport>();
 
 /**
  * Main application entry point
@@ -159,13 +165,50 @@ async function main() {
       }
     );
 
-    // Connect to the transport layer
-    // The StdioServerTransport uses standard input/output for communication
-    const transport = new StdioServerTransport();
-    await server.connect(transport);
+    // Set up Express server for SSE
+    const app = express();
+    app.use(express.json());
+
+    // SSE endpoint
+    app.get("/sse", async (req, res) => {
+      const sessionId = req.query.session as string || Math.random().toString(36).substring(2, 15);
+      console.log(`New SSE connection established: ${sessionId}`);
+      
+      // Set necessary headers for SSE
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      
+      // Create transport and store it
+      const transport = new SSEServerTransport("/messages", res);
+      activeTransports.set(sessionId, transport);
+      
+      // Clean up when client disconnects
+      req.on('close', () => {
+        console.log(`SSE connection closed: ${sessionId}`);
+        activeTransports.delete(sessionId);
+      });
+      
+      // Connect to MCP server
+      await server.connect(transport);
+    });
+
+    // Message handling endpoint
+    app.post("/messages", async (req, res) => {
+      const sessionId = req.query.session as string || req.headers['x-session-id'] as string;
+      if (!sessionId || !activeTransports.has(sessionId)) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+      
+      const transport = activeTransports.get(sessionId);
+      await transport.handlePostMessage(req, res);
+    });
     
-    console.log("Storybook MCP Server running");
-    console.log(`Connected to Storybook at ${config.storybookUrl}`);
+    // Start the Express server
+    app.listen(config.port, () => {
+      console.log(`Storybook MCP Server running on port ${config.port}`);
+      console.log(`Connected to Storybook at ${config.storybookUrl}`);
+    });
   } catch (error) {
     console.error('Failed to initialize server:', formatErrorDetails(error));
     process.exit(1);

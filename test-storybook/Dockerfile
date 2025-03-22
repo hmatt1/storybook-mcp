@@ -21,4 +21,4 @@ RUN npm run build-storybook
 EXPOSE 6006
 
 # Start Storybook
-CMD ["npm", "run", "storybook"]
+CMD ["npm", "run", "storybook", "--", "--no-open", "--ci"]

@@ -3,23 +3,27 @@
   "version": "1.0.0",
   "description": "Test Storybook instance for MCP server integration tests",
   "scripts": {
-    "storybook": "start-storybook -p 6006 -h 0.0.0.0",
-    "build-storybook": "build-storybook"
+    "storybook": "storybook dev -p 6006 -h 0.0.0.0",
+    "build-storybook": "storybook build"
   },
   "dependencies": {
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "@babel/plugin-syntax-jsx": "^7.25.9",
+    "@babel/preset-env": "^7.26.9",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "@babel/core": "^7.21.4",
-    "@storybook/addon-actions": "^6.5.16",
-    "@storybook/addon-essentials": "^6.5.16",
-    "@storybook/addon-interactions": "^6.5.16",
-    "@storybook/addon-links": "^6.5.16",
-    "@storybook/builder-webpack4": "^6.5.16",
-    "@storybook/manager-webpack4": "^6.5.16",
-    "@storybook/react": "^6.5.16",
-    "@storybook/testing-library": "^0.0.13",
-    "babel-loader": "^8.3.0"
+    "@babel/core": "^7.26.10",
+    "@babel/preset-react": "^7.26.3",
+    "@chromatic-com/storybook": "^3.2.6",
+    "@storybook/addon-actions": "^8.6.7",
+    "@storybook/addon-essentials": "^8.6.7",
+    "@storybook/addon-interactions": "^8.6.7",
+    "@storybook/addon-links": "^8.6.7",
+    "@storybook/addon-webpack5-compiler-babel": "^3.0.5",
+    "@storybook/react": "^8.6.7",
+    "@storybook/react-webpack5": "^8.6.7",
+    "@storybook/test": "^8.6.7",
+    "babel-loader": "^10.0.0"
   }
 }
