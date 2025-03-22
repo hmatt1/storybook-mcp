@@ -1,0 +1,63 @@
+{
+  "source": {
+    "include": ["src"],
+    "includePattern": ".+\\.ts$",
+    "excludePattern": "(node_modules/|docs)"
+  },
+  "plugins": [
+    "plugins/markdown",
+    "node_modules/jsdoc-typescript"
+  ],
+  "opts": {
+    "template": "node_modules/docdash",
+    "encoding": "utf8",
+    "destination": "./docs/",
+    "recurse": true,
+    "verbose": true
+  },
+  "markdown": {
+    "hardwrap": false,
+    "idInHeadings": true
+  },
+  "templates": {
+    "cleverLinks": false,
+    "monospaceLinks": false,
+    "default": {
+      "outputSourceFiles": true,
+      "includeDate": false,
+      "useLongnameInNav": false
+    }
+  },
+  "docdash": {
+    "static": false,
+    "sort": true,
+    "sectionOrder": [
+      "Classes",
+      "Modules",
+      "Interfaces",
+      "Externals",
+      "Events",
+      "Namespaces",
+      "Mixins",
+      "Tutorials",
+      "Global"
+    ],
+    "meta": {
+      "title": "Storybook MCP Server API Documentation",
+      "description": "API documentation for the Storybook MCP Server",
+      "keyword": "storybook, mcp, api, documentation"
+    },
+    "menu": {
+      "GitHub": {
+        "href": "https://github.com/yourusername/storybook-mcp-server",
+        "target": "_blank"
+      }
+    },
+    "search": true,
+    "collapse": true,
+    "wrap": true,
+    "typedefs": true,
+    "scripts": [],
+    "styles": []
+  }
+}
