@@ -38,6 +38,20 @@ npm start
 
 By default, the server will connect to Storybook at http://localhost:6006 and save screenshots to the `./screenshots` directory.
 
+## Using Docker Image
+
+You can pull the pre-built Docker image from Docker Hub:
+
+```bash
+# Pull the latest image
+docker pull hmatt1/storybook-mcp:latest
+
+# Run the container
+docker run --add-host=host.docker.internal:host-gateway hmatt1/storybook-mcp:latest
+```
+
+For more detailed instructions on Docker deployment, see [DOCKER_DEPLOYMENT.md](./docs/DOCKER_DEPLOYMENT.md).
+
 ## Configuration
 
 You can configure the server using environment variables:
@@ -278,6 +292,12 @@ When running Storybook on your host, ensure it's accessible from Docker by bindi
 ```bash
 npx start-storybook -p 6006 --host 0.0.0.0
 ```
+
+## Continuous Integration
+
+This project uses GitHub Actions to automatically build and push Docker images to [Docker Hub](https://hub.docker.com/repository/docker/hmatt1/storybook-mcp). 
+
+For more information on the CI/CD setup, see [DOCKER_DEPLOYMENT.md](./docs/DOCKER_DEPLOYMENT.md).
 
 ## Development
 
