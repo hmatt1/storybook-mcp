@@ -183,77 +183,6 @@ function stopConnectionChecker(): void {
 }
 
 /**
- * Track memory usage periodically
- * This helps identify memory leaks or issues before they cause server crashes
- */
-let memoryMonitorInterval: NodeJS.Timeout | null = null;
-
-function startMemoryMonitor(intervalMs = 60000): void {
-  if (config.debug) {
-    memoryMonitorInterval = setInterval(() => {
-      const memUsage = process.memoryUsage();
-      logger.debug('Memory usage:', {
-        rss: `${Math.round(memUsage.rss / 1024 / 1024)}MB`,
-        heapTotal: `${Math.round(memUsage.heapTotal / 1024 / 1024)}MB`,
-        heapUsed: `${Math.round(memUsage.heapUsed / 1024 / 1024)}MB`
-      });
-    }, intervalMs);
-  }
-}
-
-function stopMemoryMonitor(): void {
-  if (memoryMonitorInterval) {
-    clearInterval(memoryMonitorInterval);
-    memoryMonitorInterval = null;
-  }
-}
-
-/**
- * Clean up resources gracefully when shutting down
- */
-async function gracefulShutdown(exitCode = 0): Promise<void> {
-  if (serverState.isShuttingDown) {
-    logger.info('Shutdown already in progress, ignoring duplicate request');
-    return;
-  }
-
-  serverState.isShuttingDown = true;
-  logger.info(`Initiating graceful shutdown with exit code ${exitCode}`);
-
-  // Stop monitoring
-  stopMemoryMonitor();
-  stopConnectionChecker();
-
-  // Wait for active requests to complete (with a timeout)
-  if (serverState.activeRequests > 0) {
-    logger.info(`Waiting for ${serverState.activeRequests} active requests to complete`);
-
-    // Wait max 5 seconds for requests to complete
-    await Promise.race([
-      new Promise(resolve => {
-        const checkInterval = setInterval(() => {
-          if (serverState.activeRequests === 0) {
-            clearInterval(checkInterval);
-            resolve(null);
-          }
-        }, 100);
-      }),
-      new Promise(resolve => setTimeout(resolve, 5000))
-    ]);
-  }
-
-  try {
-    logger.info('Closing browser resources');
-    await closeBrowser();
-  } catch (error) {
-    logger.error('Error closing browser:', formatErrorDetails(error));
-  }
-
-  logger.info('Shutdown complete, exiting process');
-  process.exit(exitCode);
-}
-
-/**
  * Setup the server by registering all resources and tools
  */
 function setupServer() {
@@ -692,9 +621,6 @@ async function runServer() {
     logger.info('Starting Storybook MCP Server');
     logger.debug('Configuration:', JSON.stringify(config, null, 2));
 
-    // Start memory monitoring
-    startMemoryMonitor();
-
     // Ensure output directory exists
     await ensureOutputDir(config.outputDir);
     logger.info('Output directory ready:', config.outputDir);
@@ -732,10 +658,10 @@ async function runServer() {
       }
     };
 
-    transport.onclose = () => {
-      logger.info('Transport closed, initiating server shutdown');
-      gracefulShutdown(0);
-    };
+    // transport.onclose = () => {
+    //   logger.info('Transport closed, initiating server shutdown');
+    //   gracefulShutdown(0);
+    // };
 
     // Connect the server to the transport
     logger.info('Connecting transport');
@@ -769,30 +695,6 @@ async function runServer() {
     process.exit(1);
   }
 }
-
-// Register process event handlers for clean shutdown
-process.on('SIGINT', () => {
-  logger.info('Received SIGINT, shutting down server...');
-  gracefulShutdown(0);
-});
-
-process.on('SIGTERM', () => {
-  logger.info('Received SIGTERM, shutting down server...');
-  gracefulShutdown(0);
-});
-
-// Add handler for unhandled promise rejections
-process.on('unhandledRejection', (reason, promise) => {
-  logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  // Log error but don't exit - this enhances stability
-});
-
-// Add handler for uncaught exceptions
-process.on('uncaughtException', (error) => {
-  logger.error('Uncaught Exception:', formatErrorDetails(error));
-  // For uncaught exceptions, it's safer to exit with error code
-  gracefulShutdown(1);
-});
 
 // Add handler to log when process is about to exit
 process.on('exit', (code) => {
