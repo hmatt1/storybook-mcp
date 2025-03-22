@@ -23,6 +23,70 @@ export async function ensureOutputDir(outputDir: string): Promise<void> {
 }
 
 /**
+ * Validates and prepares the output directory for screenshots
+ * 
+ * This function ensures the directory exists and resolves Docker volume mounting issues
+ * 
+ * @param {string} outputDir - The configured output directory
+ * @returns {Promise<string>} - The validated output directory path
+ */
+export async function validateOutputDirectory(outputDir: string): Promise<string> {
+  // Check if running in Docker
+  const isDocker = await fs.access('/.dockerenv').then(() => true).catch(() => false);
+  
+  console.error(`Running in Docker: ${isDocker}`);
+  console.error(`Original output directory: ${outputDir}`);
+  
+  // Normalize the path - this handles different path formats
+  let normalizedPath = path.normalize(outputDir);
+  
+  // In Docker, ensure paths are absolute
+  if (isDocker) {
+    // If path doesn't start with /, make it absolute
+    if (!normalizedPath.startsWith('/')) {
+      normalizedPath = path.join(process.cwd(), normalizedPath);
+      console.error(`Converted to absolute path: ${normalizedPath}`);
+    }
+  }
+  
+  // Attempt to create the directory, with recursive option to create parent dirs
+  try {
+    await fs.mkdir(normalizedPath, { recursive: true });
+    console.error(`Created directory: ${normalizedPath}`);
+    
+    // Test write access by creating and removing a test file
+    const testFile = path.join(normalizedPath, '.test-write-access');
+    await fs.writeFile(testFile, 'test');
+    await fs.unlink(testFile);
+    console.error(`Directory is writable: ${normalizedPath}`);
+  } catch (error) {
+    console.error(`Error preparing directory ${normalizedPath}:`, error);
+    
+    // Try alternative paths if we encounter permission issues
+    if ((error as any).code === 'EACCES' || (error as any).code === 'EPERM') {
+      const fallbackPaths = [
+        '/tmp/screenshots',
+        './tmp-screenshots',
+        path.join(process.cwd(), 'screenshots')
+      ];
+      
+      for (const fallbackPath of fallbackPaths) {
+        try {
+          await fs.mkdir(fallbackPath, { recursive: true });
+          console.error(`Using fallback directory: ${fallbackPath}`);
+          normalizedPath = fallbackPath;
+          break;
+        } catch (fallbackError) {
+          console.error(`Fallback path failed: ${fallbackPath}`, fallbackError);
+        }
+      }
+    }
+  }
+  
+  return normalizedPath;
+}
+
+/**
  * Check if the Storybook URL is accessible
  * 
  * This function validates that the provided URL points to a valid Storybook
