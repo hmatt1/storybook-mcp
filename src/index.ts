@@ -2,21 +2,17 @@
  * Storybook MCP Server
  * 
  * This server implements the Model Context Protocol (MCP) to allow AI assistants
- * to visually analyze Storybook UI components. It provides tools for discovering
- * available components and capturing screenshots of components in different states.
- * 
- * @module index
+ * to visually analyze Storybook UI components.
  */
 
-import express from "express";
+import express, { Request, Response } from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { z } from "zod";
 import { captureComponent, closeBrowser } from "./screenshot.js";
 import { getComponents } from "./components.js";
 import { checkStorybookConnection, ensureOutputDir, formatErrorDetails } from "./utils.js";
-import { ServerConfig, ComponentState, Viewport } from "./types.js";
-import { startHealthServer, updateHealthConfig } from "./health.js";
+import { ServerConfig } from "./types.js";
 
 /**
  * Server configuration
@@ -31,6 +27,16 @@ const config: ServerConfig = {
   port: parseInt(process.env.PORT || '3001')
 };
 
+// Create MCP server
+const server = new McpServer({
+  name: "Storybook MCP Server",
+  version: "1.0.0"
+});
+
+// Create Express app
+const app = express();
+app.use(express.json());
+
 // Store active transports for message routing
 const activeTransports = new Map<string, SSEServerTransport>();
 
@@ -39,26 +45,48 @@ const activeTransports = new Map<string, SSEServerTransport>();
  * Initializes the MCP server and registers available tools
  */
 async function main() {
-  // Start the health check server with config
-  startHealthServer(3000, { storybookUrl: config.storybookUrl });
-
-  // Initialize MCP server with metadata
-  const server = new McpServer({
-    name: "Storybook MCP Server",
-    version: "1.0.0"
-  });
-
   try {
     // Ensure output directory exists and Storybook is accessible
-    console.log('Output directory ready:', config.outputDir);
     await ensureOutputDir(config.outputDir);
-    
-    console.log('Checking connection to Storybook at', config.storybookUrl);
+    console.log('Output directory ready:', config.outputDir);
+
     await checkStorybookConnection(config.storybookUrl);
-    console.log('Storybook connection successful');
-    
+    console.log('Storybook connection successful at', config.storybookUrl);
+
+    // Register a resource to get the list of components
+    server.resource(
+      "components-list",
+      "components://storybook",
+      async (uri) => {
+        try {
+          console.log('Fetching components for resource...');
+          const components = await getComponents(config.storybookUrl);
+
+          return {
+            contents: [{
+              uri: uri.href,
+              text: JSON.stringify({
+                count: components.length,
+                components: components
+              }, null, 2)
+            }]
+          };
+        } catch (error) {
+          console.error('Error fetching components for resource:', error);
+          return {
+            contents: [{
+              uri: uri.href,
+              text: JSON.stringify({
+                error: 'Failed to retrieve components',
+                details: formatErrorDetails(error)
+              }, null, 2)
+            }]
+          };
+        }
+      }
+    );
+
     // Register the "components" tool
-    // This tool lists all available Storybook components and their variants
     server.tool(
       "components",
       {}, // No parameters needed
@@ -67,7 +95,7 @@ async function main() {
           console.log('Fetching components from Storybook...');
           const components = await getComponents(config.storybookUrl);
           console.log(`Found ${components.length} components`);
-          
+
           return {
             content: [
               {
@@ -101,7 +129,6 @@ async function main() {
     );
 
     // Register the "capture" tool
-    // This tool captures screenshots of components in specific states and viewport sizes
     server.tool(
       "capture",
       {
@@ -120,7 +147,7 @@ async function main() {
       async ({ component, variant = "Default", state = {}, viewport = { width: 1024, height: 768 } }) => {
         try {
           // Ensure viewport has required properties with default values
-          const fullViewport: Viewport = {
+          const fullViewport = {
             width: viewport.width ?? 1024,
             height: viewport.height ?? 768
           };
@@ -128,7 +155,7 @@ async function main() {
           const result = await captureComponent({
             component,
             variant,
-            state: state as ComponentState,
+            state,
             viewport: fullViewport,
             storybookUrl: config.storybookUrl,
             outputDir: config.outputDir
@@ -148,6 +175,7 @@ async function main() {
         } catch (error) {
           const errorMessage = formatErrorDetails(error);
           console.error('Error capturing component:', errorMessage);
+
           return {
             content: [
               {
@@ -165,44 +193,52 @@ async function main() {
       }
     );
 
-    // Set up Express server for SSE
-    const app = express();
-    app.use(express.json());
-
-    // SSE endpoint
-    app.get("/sse", async (req, res) => {
+    // Define route handlers explicitly
+    const handleSseRequest = (req: Request, res: Response) => {
       const sessionId = req.query.session as string || Math.random().toString(36).substring(2, 15);
       console.log(`New SSE connection established: ${sessionId}`);
-      
+
       // Set necessary headers for SSE
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
-      
+
       // Create transport and store it
       const transport = new SSEServerTransport("/messages", res);
       activeTransports.set(sessionId, transport);
-      
+
       // Clean up when client disconnects
       req.on('close', () => {
         console.log(`SSE connection closed: ${sessionId}`);
         activeTransports.delete(sessionId);
       });
-      
-      // Connect to MCP server
-      await server.connect(transport);
-    });
 
-    // Message handling endpoint
-    app.post("/messages", async (req, res) => {
+      // Connect to MCP server
+      server.connect(transport).catch(error => {
+        console.error('Error connecting to MCP server:', formatErrorDetails(error));
+      });
+    };
+
+    const handleMessageRequest = (req: Request, res: Response) : void => {
       const sessionId = req.query.session as string || req.headers['x-session-id'] as string;
       if (!sessionId || !activeTransports.has(sessionId)) {
-        return res.status(404).json({ error: "Session not found" });
+         res.status(404).json({ error: "Session not found" });
       }
-      
+
       const transport = activeTransports.get(sessionId);
-      await transport.handlePostMessage(req, res);
-    });
+      if (!transport) {
+         res.status(500).json({ error: "Transport not available" });
+      }
+
+      transport.handlePostMessage(req, res).catch(error => {
+        console.error('Error handling post message:', formatErrorDetails(error));
+        res.status(500).json({ error: "Failed to process message" });
+      });
+    };
+
+    // Set up routes
+    app.get('/sse', handleSseRequest);
+    app.post('/messages', handleMessageRequest);
     
     // Start the Express server
     app.listen(config.port, () => {

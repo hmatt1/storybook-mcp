@@ -24,6 +24,7 @@ RUN mkdir -p ./screenshots
 ENV NODE_ENV=production
 ENV STORYBOOK_URL=http://host.docker.internal:6006
 ENV OUTPUT_DIR=/app/screenshots
+ENV PORT=3000
 
 # Add additional browser launch arguments for Docker
 ENV PLAYWRIGHT_ARGS="--no-sandbox,--disable-setuid-sandbox,--disable-dev-shm-usage"

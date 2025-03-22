@@ -37,7 +37,9 @@ export async function checkStorybookConnection(storybookUrl: string): Promise<vo
   let browser = null;
   
   try {
-    browser = await chromium.launch();
+    browser = await chromium.launch({
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+    });
     const context = await browser.newContext();
     const page = await context.newPage();
     
@@ -46,7 +48,7 @@ export async function checkStorybookConnection(storybookUrl: string): Promise<vo
     
     const response = await page.goto(storybookUrl, { 
       timeout: 30000,
-      waitUntil: 'networkidle'
+      waitUntil: 'domcontentloaded'  // Changed from 'networkidle' to 'domcontentloaded'
     });
     
     if (!response) {

@@ -1,12 +1,13 @@
 {
-  "name": "mcp-tests",
+  "name": "storybook-mcp-server-tests",
   "version": "1.0.0",
-  "description": "Integration tests for MCP server",
+  "description": "Integration tests for Storybook MCP Server",
   "type": "module",
+  "scripts": {
+    "test": "node run-tests.js"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.7.0",
-    "axios": "^1.6.0",
-    "chai": "^4.3.7",
-    "fs-extra": "^11.1.1"
+    "node-fetch": "^3.3.2"
   }
 }

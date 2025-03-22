@@ -1,84 +1,56 @@
-# MCP Server Integration Tests
+# Storybook MCP Server Tests
 
-This directory contains integration tests for the Storybook MCP Server. These tests verify that the server can properly interact with a Storybook instance and provide the expected functionality.
+This directory contains integration tests for the Storybook MCP Server. The tests verify that the server correctly implements the Model Context Protocol (MCP) and can interact with a Storybook instance.
 
-## How the Tests Work
+## Test Structure
 
-The tests use Docker Compose to create a containerized environment with three main components:
+- `run-tests.js`: Main test script that connects to the MCP server and verifies functionality
+- `run-tests.bat`: Windows batch script for running tests in Docker
+- `Dockerfile.test`: Dockerfile for the test runner container
 
-1. **Storybook Container**: Runs a test Storybook instance with predefined Button components
-2. **MCP Server Container**: Connects to the Storybook instance and exposes the MCP API
-3. **Test Runner Container**: Executes tests against the MCP server API
+## What's Being Tested
 
-The test process follows these steps:
+The tests verify:
 
-1. **Setup**: Docker Compose builds and starts all containers
-2. **Discovery**: The test runner waits for the MCP server to initialize and verifies component discovery
-3. **Capture**: Tests request screenshots of components in different states and viewport sizes
-4. **Validation**: Tests verify screenshots exist and have valid content
-5. **Cleanup**: The environment is torn down automatically after tests complete
+1. **Component Discovery**: The MCP server can correctly discover all components from Storybook
+2. **Screenshot Capture**: Components can be captured in different states (default, hover, etc.)
+3. **Responsive Testing**: Components can be captured at different viewport sizes
+4. **Output Verification**: Screenshots are correctly saved to the output directory
 
 ## Running the Tests
 
-### Prerequisites
+### Using Docker (Recommended)
 
-- Docker and Docker Compose installed
-- Node.js and npm installed
-
-### Running tests locally
-
-On Linux/macOS:
-```
-npm run test:integration
+```bash
+# From the project root
+npm run test
 ```
 
-On Windows:
+This runs the tests in a Docker environment that includes:
+- A test Storybook instance
+- The MCP server connected to that instance
+- The test runner that verifies functionality
+
+### Running Tests Locally
+
+If you have a Storybook instance running on `http://localhost:6006` and the MCP server on `http://localhost:3000`:
+
+```bash
+cd tests
+npm install
+node run-tests.js
 ```
-npm run test:integration
+
+You can customize the URLs with environment variables:
+
+```bash
+cd tests
+npm install
+MCP_SERVER_URL=http://localhost:3000 OUTPUT_DIR=../test-output node run-tests.js
 ```
 
-The test script automatically detects your platform and uses the appropriate shell script.
+## Test Output
 
-### What to expect
-
-When running tests, you should see:
-
-1. Docker containers being built and started
-2. Test progress output from the test runner
-3. A summary of test results
-4. Generated screenshots in the `test-output` directory
-
-### CI/CD Integration
-
-These tests are automatically run in GitHub Actions workflow before building and pushing the Docker image. The workflow will:
-
-1. Run the integration tests
-2. Upload any generated screenshots as build artifacts
-3. Only proceed to build and push the Docker image if all tests pass
-
-## Test Components
-
-The test environment includes Button components with different variants:
-
-- Primary button
-- Secondary button
-- Success button
-- Danger button
-- Large button
-- Small button
-
-These components are designed to test various aspects of the MCP server, including:
-
-- Component discovery
-- Screenshot capture
-- State handling (hover, active)
-- Responsive behavior
-
-## Troubleshooting
-
-If tests fail, check:
-
-1. Docker is running and has sufficient resources
-2. No conflicts with ports 3000 (MCP server) or 6006/6007 (Storybook)
-3. The `test-output` directory exists and is writable
-4. Docker Compose is installed and working correctly
+The tests generate:
+- Console output with test results
+- Screenshot files in the `test-output` directory

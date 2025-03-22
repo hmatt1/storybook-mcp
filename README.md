@@ -151,6 +151,72 @@ The Docker container connects to the Storybook instance running on your host mac
 docker run -p 3000:3000 -e STORYBOOK_URL=http://mystorybook.example.com:6006 storybook-mcp-server
 ```
 
+### Connecting to Storybook from Docker
+
+When running the MCP server in Docker and connecting to a Storybook instance running outside Docker (on your host machine), the following approaches can be used:
+
+#### Option 1: Use host.docker.internal (Recommended for Docker Desktop)
+
+If you're using Docker Desktop (Mac or Windows), the special DNS name `host.docker.internal` points to your host machine:
+
+```bash
+docker run -p 3000:3000 -e STORYBOOK_URL=http://host.docker.internal:6006 storybook-mcp-server
+```
+
+For Linux hosts, you need to add the `--add-host` flag:
+
+```bash
+docker run -p 3000:3000 --add-host=host.docker.internal:host-gateway -e STORYBOOK_URL=http://host.docker.internal:6006 storybook-mcp-server
+```
+
+In docker-compose.yml:
+```yaml
+services:
+  mcp-server:
+    environment:
+      - STORYBOOK_URL=http://host.docker.internal:6006
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # For Linux hosts
+```
+
+#### Option 2: Use Host Network Mode (Linux)
+
+On Linux, you can use the host network mode to access localhost directly:
+
+```bash
+docker run --network="host" storybook-mcp-server
+```
+
+In docker-compose.yml:
+```yaml
+services:
+  mcp-server:
+    network_mode: "host"
+```
+
+#### Option 3: Use Host Machine's IP Address
+
+Find your host machine's IP address and use it instead of localhost:
+
+```bash
+# On Linux/Mac
+ip addr show | grep "inet " | grep -v 127.0.0.1
+
+# On Windows
+ipconfig
+
+# Then use the IP in your Docker command
+docker run -p 3000:3000 -e STORYBOOK_URL=http://192.168.1.100:6006 storybook-mcp-server
+```
+
+#### Running Storybook for Docker Access
+
+When running Storybook on your host, ensure it's accessible from Docker by binding to all interfaces:
+
+```bash
+npx start-storybook -p 6006 --host 0.0.0.0
+```
+
 ## Development
 
 ### Development Mode

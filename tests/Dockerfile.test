@@ -2,19 +2,20 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Install curl for healthchecks
+# Install curl for healthcheck
 RUN apk add --no-cache curl
 
-# Install necessary dependencies
+# Copy package.json first
 COPY package.json ./
+
+# Install dependencies
 RUN npm install
 
 # Copy test files
 COPY . .
 
-# Set environment variables
-ENV MCP_SERVER_URL=http://mcp-server:3000
-ENV OUTPUT_DIR=/test-output
+# Create directory for test output
+RUN mkdir -p /test-output
 
-# Run tests
+# Run the tests
 CMD ["node", "run-tests.js"]
