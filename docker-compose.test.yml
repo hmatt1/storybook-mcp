@@ -1,0 +1,37 @@
+services:
+  storybook:
+    build:
+      context: ./test-storybook
+      dockerfile: Dockerfile
+    ports:
+      - "6007:6006"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6006"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - STORYBOOK_URL=http://storybook:6006
+      - OUTPUT_DIR=/screenshots
+    depends_on:
+      storybook:
+        condition: service_healthy
+    volumes:
+      - ./test-output:/screenshots
+
+  test-runner:
+    build:
+      context: ./tests
+      dockerfile: Dockerfile.test
+    depends_on:
+      - mcp-server
+    volumes:
+      - ./test-output:/test-output

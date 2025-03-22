@@ -11,8 +11,10 @@
     "docs": "jsdoc -c jsdoc.json",
     "docs:dev": "npm run docs && serve docs",
     "lint": "eslint src/**/*.ts",
-    "test": "chmod +x tests/run-tests.sh && tests/run-tests.sh",
-    "test:integration": "chmod +x tests/run-tests.sh && tests/run-tests.sh",
+    "test:windows": "npm run build && .\\tests\\run-tests.bat",
+    "test:linux": "npm run build && bash ./tests/run-tests.sh",
+    "test": "npm run build && node -e \"process.platform === 'win32' ? require('child_process').execSync('tests\\\\run-tests.bat', {stdio: 'inherit'}) : require('child_process').execSync('chmod +x tests/run-tests.sh && tests/run-tests.sh', {stdio: 'inherit'})\"",
+    "test:integration": "npm run build && node -e \"process.platform === 'win32' ? require('child_process').execSync('tests\\\\run-tests.bat', {stdio: 'inherit'}) : require('child_process').execSync('chmod +x tests/run-tests.sh && tests/run-tests.sh', {stdio: 'inherit'})\"",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [

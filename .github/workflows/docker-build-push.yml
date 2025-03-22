@@ -19,13 +19,27 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Docker Compose
-        uses: docker/compose-cli@v2
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          version: '2.23.0'
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Run integration tests
-        run: npm run test
+        run: npm run test:integration
+
+      - name: Upload test artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-screenshots
+          path: test-output/*.png
+          if-no-files-found: warn
 
   build-and-push:
     runs-on: ubuntu-latest

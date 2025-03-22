@@ -1,0 +1,11 @@
+{
+  "name": "mcp-tests",
+  "version": "1.0.0",
+  "description": "Integration tests for MCP server",
+  "type": "module",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "chai": "^4.3.7",
+    "fs-extra": "^11.1.1"
+  }
+}

@@ -43,6 +43,24 @@ function prepareForStorybookUrl(str: string): string {
 }
 
 /**
+ * Create a string representation of component state for use in filenames
+ * @param {ComponentState} state - The component state
+ * @returns {string} - String representation of the state
+ */
+function getStateString(state: ComponentState): string {
+  if (!state || (!state.hover && !state.focus && !state.active)) {
+    return 'Default';
+  }
+  
+  const states = [];
+  if (state.hover) states.push('Hover');
+  if (state.focus) states.push('Focus');
+  if (state.active) states.push('Active');
+  
+  return states.join('-');
+}
+
+/**
  * Capture a screenshot of a Storybook component
  * 
  * This function navigates to a specific component in Storybook, applies
@@ -58,7 +76,7 @@ function prepareForStorybookUrl(str: string): string {
  * const result = await captureComponent({
  *   component: 'button--primary',
  *   variant: 'Default',
- *   state: 'hover',
+ *   state: { hover: true },
  *   viewport: { width: 375, height: 667 },
  *   storybookUrl: 'http://localhost:6006',
  *   outputDir: './screenshots'
@@ -111,33 +129,30 @@ export async function captureComponent(options: CaptureOptions): Promise<Capture
     
     // Apply component state (hover, focus, etc.) by adding appropriate classes
     // Storybook uses special classes (sb-pseudo-*) to simulate different states
-    if (state !== 'default') {
-      await page.evaluate((stateName: string) => {
-        const root = document.querySelector('#storybook-root > *');
-        if (root) {
-          switch (stateName) {
-            case 'hover':
-              root.classList.add('sb-pseudo-hover');
-              break;
-            case 'focus':
-              root.classList.add('sb-pseudo-focus');
-              break;
-            case 'active':
-              root.classList.add('sb-pseudo-active');
-              break;
-          }
+    await page.evaluate((stateObj: ComponentState) => {
+      const root = document.querySelector('#storybook-root > *');
+      if (root) {
+        if (stateObj.hover) {
+          root.classList.add('sb-pseudo-hover');
         }
-      }, state);
-      
-      // Give the state a moment to take effect
-      await page.waitForTimeout(100);
-    }
+        if (stateObj.focus) {
+          root.classList.add('sb-pseudo-focus');
+        }
+        if (stateObj.active) {
+          root.classList.add('sb-pseudo-active');
+        }
+      }
+    }, state);
+    
+    // Give the state a moment to take effect
+    await page.waitForTimeout(100);
     
     // Take screenshot of the component
     const screenshot = await page.screenshot({ type: 'png', fullPage: false });
     
     // Generate a unique filename based on component details and viewport
-    const filename = `${storyId.replace(/\//g, '-')}_${state}_${viewport.width}x${viewport.height}.png`;
+    const stateString = getStateString(state);
+    const filename = `${storyId.replace(/\//g, '-')}-${stateString}.png`;
     const filePath = path.join(outputDir, filename);
     
     // Save screenshot to disk

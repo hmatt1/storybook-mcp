@@ -76,9 +76,16 @@ export interface Viewport {
 }
 
 /**
- * Supported component states
+ * Component state options
  */
-export type ComponentState = 'default' | 'hover' | 'focus' | 'active';
+export interface ComponentState {
+  /** Whether to hover over the component */
+  hover?: boolean;
+  /** Whether to focus the component */
+  focus?: boolean;
+  /** Whether to set the component to active state */
+  active?: boolean;
+}
 
 /**
  * Options for capturing a component screenshot
@@ -138,10 +145,8 @@ export interface CaptureParams {
   component: string;
   /** Variant name (default: 'Default') */
   variant?: string;
-  /** Component state (default, hover, focus, active) */
+  /** Component state */
   state?: ComponentState;
-  /** Viewport width in pixels */
-  width?: number;
-  /** Viewport height in pixels */
-  height?: number;
+  /** Viewport dimensions */
+  viewport?: Viewport;
 }

@@ -3,43 +3,51 @@
 # Exit on error
 set -e
 
-echo "Building project..."
-npm run build
+# Create output directory if it doesn't exist
+mkdir -p test-output
 
-echo "Running test storybook instance..."
-# Start a test Storybook instance (replace with your test Storybook command)
-# For example, using http-server to serve a static Storybook build
-if [ -d "test-storybook" ]; then
-  npx http-server test-storybook -p 6007 &
-  STORYBOOK_PID=$!
-  
-  # Give Storybook time to start
-  sleep 5
-  
-  echo "Running tests against test Storybook..."
-  # Use custom Storybook URL for tests
-  STORYBOOK_URL=http://localhost:6007 node dist/index.js &
-  SERVER_PID=$!
-  
-  # Give server time to start
-  sleep 2
-  
-  # Add your test commands here
-  # For example:
-  echo "Test: Get components"
-  curl -s -X POST http://localhost:3000/tools/components | jq
-  
-  echo "Test: Capture component"
-  curl -s -X POST http://localhost:3000/tools/capture \
-    -H "Content-Type: application/json" \
-    -d '{"component":"button--primary","variant":"Default"}' | jq
-  
-  # Cleanup
-  kill $SERVER_PID
-  kill $STORYBOOK_PID
+# Check if Docker Compose is available
+if command -v docker compose &> /dev/null; then
+    DOCKER_COMPOSE_CMD="docker compose"
+elif command -v docker-compose &> /dev/null; then
+    DOCKER_COMPOSE_CMD="docker-compose"
 else
-  echo "No test Storybook found. Skipping integration tests."
-  echo "To run integration tests, create a 'test-storybook' directory with a Storybook build."
+    echo "Docker Compose not found. Installing Docker Compose..."
+    pip install docker-compose
+    DOCKER_COMPOSE_CMD="docker-compose"
 fi
 
-echo "All tests completed successfully!"
+echo "Creating test-storybook directory structure if needed..."
+# Ensure all test-storybook directories exist
+mkdir -p test-storybook/.storybook
+mkdir -p test-storybook/src/components
+
+echo "Building and starting test environment..."
+$DOCKER_COMPOSE_CMD -f docker-compose.test.yml build
+$DOCKER_COMPOSE_CMD -f docker-compose.test.yml up --abort-on-container-exit
+
+# Check exit code of test-runner container
+TEST_EXIT_CODE=$($DOCKER_COMPOSE_CMD -f docker-compose.test.yml ps -q test-runner | xargs docker inspect -f '{{.State.ExitCode}}')
+
+echo "Cleaning up test environment..."
+$DOCKER_COMPOSE_CMD -f docker-compose.test.yml down
+
+# Display test results summary
+echo ""
+echo "================================"
+echo "      TEST RESULTS SUMMARY      "
+echo "================================"
+
+if [ "$TEST_EXIT_CODE" -eq "0" ]; then
+    echo "✅ All tests passed successfully!"
+    
+    # List generated screenshots
+    echo ""
+    echo "Screenshots generated:"
+    ls -la test-output/*.png 2>/dev/null || echo "No screenshots found."
+else
+    echo "❌ Tests failed with exit code: $TEST_EXIT_CODE"
+    echo "Check the logs above for more details."
+fi
+
+exit $TEST_EXIT_CODE

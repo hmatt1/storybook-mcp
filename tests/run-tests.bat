@@ -1,33 +1,61 @@
 @echo off
-echo Building project...
-call npm run build
+setlocal enabledelayedexpansion
 
-echo Testing if server can start...
-echo This is a simplified test that just checks if the server can initialize
+:: Create output directory if it doesn't exist
+if not exist test-output mkdir test-output
 
-:: Check if test-storybook directory exists
-if exist "test-storybook" (
-  echo Running integration tests...
-  :: Start a test storybook instance
-  start /b npx http-server test-storybook -p 6007
-  
-  :: Give it time to start
-  timeout /t 5
-  
-  :: Run the server with test storybook URL
-  set STORYBOOK_URL=http://localhost:6007
-  start /b node dist/index.js
-  
-  :: Give server time to start
-  timeout /t 2
-  
-  :: Add your test commands here (would need curl or similar for Windows)
-  
-  :: Cleanup would be needed here
-  echo Note: This script doesn't run the full test suite or clean up processes
+:: Create test-storybook directory structure if needed
+if not exist test-storybook mkdir test-storybook
+if not exist test-storybook\.storybook mkdir test-storybook\.storybook
+if not exist test-storybook\src mkdir test-storybook\src
+if not exist test-storybook\src\components mkdir test-storybook\src\components
+
+echo Building and starting test environment...
+
+:: Check if Docker Compose v2 (docker compose) or v1 (docker-compose) is available
+docker compose version >nul 2>&1
+if %ERRORLEVEL% EQU 0 (
+    set DOCKER_COMPOSE_CMD=docker compose
 ) else (
-  echo No test-storybook directory found. Skipping integration tests.
-  echo To run integration tests, create a 'test-storybook' directory with a Storybook build.
+    docker-compose version >nul 2>&1
+    if %ERRORLEVEL% EQU 0 (
+        set DOCKER_COMPOSE_CMD=docker-compose
+    ) else (
+        echo Docker Compose not found. Please install Docker Compose.
+        exit /b 1
+    )
 )
 
-echo All tests completed!
+:: Build and start containers
+%DOCKER_COMPOSE_CMD% -f docker-compose.test.yml build
+%DOCKER_COMPOSE_CMD% -f docker-compose.test.yml up --abort-on-container-exit
+
+:: Get the exit code of the test-runner container
+for /f %%i in ('%DOCKER_COMPOSE_CMD% -f docker-compose.test.yml ps -q test-runner') do (
+    for /f %%j in ('docker inspect -f "{{.State.ExitCode}}" %%i') do (
+        set TEST_EXIT_CODE=%%j
+    )
+)
+
+echo Cleaning up test environment...
+%DOCKER_COMPOSE_CMD% -f docker-compose.test.yml down
+
+:: Display test results summary
+echo.
+echo ================================
+echo       TEST RESULTS SUMMARY      
+echo ================================
+
+if "%TEST_EXIT_CODE%" == "0" (
+    echo ✅ All tests passed successfully!
+    
+    :: List generated screenshots
+    echo.
+    echo Screenshots generated:
+    dir /b test-output\*.png 2>nul || echo No screenshots found.
+) else (
+    echo ❌ Tests failed with exit code: %TEST_EXIT_CODE%
+    echo Check the logs above for more details.
+)
+
+exit /b %TEST_EXIT_CODE%

@@ -50,27 +50,86 @@ export async function checkStorybookConnection(storybookUrl: string): Promise<vo
     });
     
     if (!response) {
+      console.error(`No response received from ${storybookUrl}`);
       throw new Error(`Failed to get response from ${storybookUrl}`);
     }
     
     if (response.status() >= 400) {
+      console.error(`HTTP error ${response.status()} when accessing ${storybookUrl}`);
       throw new Error(`Got HTTP error status ${response.status()} from ${storybookUrl}`);
+    }
+    
+    // Capture the page content for debugging
+    const content = await page.content();
+    console.log(`Page content length: ${content.length} characters`);
+    
+    // Try to access stories.json directly as a more reliable check
+    console.log('Checking if stories.json endpoint is available...');
+    try {
+      const storiesResponse = await context.newPage().then(p => 
+        p.goto(`${storybookUrl}/stories.json`, { timeout: 10000 })
+      );
+      
+      if (storiesResponse && storiesResponse.status() === 200) {
+        console.log('stories.json endpoint is available');
+        return; // Successfully confirmed Storybook is running
+      } else {
+        console.log(`stories.json endpoint returned status: ${storiesResponse?.status() || 'unknown'}`);
+      }
+    } catch (error) {
+      console.log(`Could not access stories.json: ${formatErrorDetails(error)}`);
+      // Continue with alternative checks
     }
     
     // Check if Storybook is properly loaded by looking for its client API
     // We support different Storybook versions
-    const isStorybook = await page.evaluate(() => {
+    const storybookInfo = await page.evaluate(() => {
       const win = window as any;
-      return !!(
-        win.__STORYBOOK_CLIENT_API__ || 
-        win.__STORYBOOK_STORY_STORE__ || 
-        win.STORYBOOK_STORY_STORE || 
-        win.__STORYBOOK_PREVIEW__
-      );
-    }).catch(() => false);
+      const apis = [];
+      
+      if (win.__STORYBOOK_CLIENT_API__) apis.push('__STORYBOOK_CLIENT_API__');
+      if (win.__STORYBOOK_STORY_STORE__) apis.push('__STORYBOOK_STORY_STORE__');
+      if (win.STORYBOOK_STORY_STORE) apis.push('STORYBOOK_STORY_STORE');
+      if (win.__STORYBOOK_PREVIEW__) apis.push('__STORYBOOK_PREVIEW__');
+      
+      return {
+        detected: apis.length > 0,
+        apis: apis.join(', '),
+        hasIframe: !!document.querySelector('iframe#storybook-preview-iframe'),
+        hasAnyIframe: document.querySelectorAll('iframe').length > 0
+      };
+    }).catch(error => {
+      console.error('Error evaluating page:', error);
+      return { 
+        detected: false, 
+        error: String(error),
+        hasIframe: false,
+        hasAnyIframe: false,
+        apis: ''
+      };
+    });
     
-    if (!isStorybook) {
-      throw new Error(`URL ${storybookUrl} doesn't appear to be a valid Storybook instance`);
+    console.log('Storybook detection results:', storybookInfo);
+    
+    if (!storybookInfo.detected) {
+      // Look for any evidence this is Storybook
+      const title = await page.title();
+      const hasStorybookInTitle = title.toLowerCase().includes('storybook');
+      const hasStorybookInBody = await page.content().then(content => 
+        content.toLowerCase().includes('storybook')
+      );
+      
+      console.log('Additional checks:', {
+        title,
+        hasStorybookInTitle,
+        hasStorybookInBody
+      });
+      
+      if (!hasStorybookInTitle && !hasStorybookInBody && !storybookInfo.hasAnyIframe) {
+        throw new Error(`URL ${storybookUrl} doesn't appear to be a valid Storybook instance`);
+      } else {
+        console.log('Page appears to be Storybook despite missing API detection');
+      }
     }
     
     console.log(`Successfully connected to Storybook at ${storybookUrl}`);
@@ -96,13 +155,13 @@ export async function checkStorybookConnection(storybookUrl: string): Promise<vo
  */
 export function formatErrorDetails(error: unknown): string {
   if (error instanceof Error) {
-    // Include stack trace in development, but could be omitted in production
-    return error.message;
+    // Include stack trace for better debugging
+    return `${error.message}\n${error.stack || ''}`;
   }
   
   if (typeof error === 'object' && error !== null) {
     try {
-      return JSON.stringify(error);
+      return JSON.stringify(error, null, 2);
     } catch {
       return String(error);
     }

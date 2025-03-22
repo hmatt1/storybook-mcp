@@ -28,32 +28,123 @@ export async function getComponents(storybookUrl: string): Promise<Component[]> 
   try {
     // Go to Storybook URL and wait for network to idle
     console.log(`Navigating to Storybook at ${storybookUrl}`);
-    const response = await page.goto(storybookUrl, { 
+    await page.goto(storybookUrl, { 
       timeout: 30000,
       waitUntil: 'networkidle'
     });
     
-    if (!response || response.status() >= 400) {
-      throw new Error(`Failed to load Storybook (status: ${response?.status() || 'unknown'})`);
+    // Wait for Storybook to initialize by checking for iframe
+    console.log('Waiting for Storybook iframe to load...');
+    const iframePresent = await page.waitForSelector('iframe#storybook-preview-iframe', { 
+      timeout: 15000,
+      state: 'attached'
+    }).then(() => true).catch(() => false);
+    
+    if (!iframePresent) {
+      console.log('Storybook iframe not found, checking alternative selectors...');
+      // Try alternative selectors
+      const altIframePresent = await page.waitForSelector('#storybook-preview iframe', {
+        timeout: 5000,
+        state: 'attached'
+      }).then(() => true).catch(() => false);
+      
+      if (!altIframePresent) {
+        // Let's try to find any iframe
+        const anyIframe = await page.locator('iframe').count();
+        console.log(`Found ${anyIframe} iframes on the page`);
+        
+        // Dump the page HTML for debugging
+        const html = await page.content();
+        console.log('Page HTML (first 500 chars):', html.substring(0, 500));
+        
+        throw new Error('Could not find Storybook iframe');
+      }
     }
     
-    // Wait for Storybook to initialize by checking for the presence of
-    // its internal API objects in the global namespace
-    await page.waitForFunction(() => {
-      const win = window as any;
-      return (
-        // Support for different Storybook versions/configurations
-        (win.__STORYBOOK_CLIENT_API__ && win.__STORYBOOK_STORY_STORE__) || 
-        (win.STORYBOOK_STORY_STORE && win.STORYBOOK_STORY_STORE.getStoriesJsonData) ||
-        (win.__STORYBOOK_PREVIEW__ && win.__STORYBOOK_PREVIEW__.storyStore?.getStoriesJsonData)
-      );
-    }, { timeout: 15000 });
+    // Try to load storybook JSON directly from the API endpoint
+    console.log('Attempting to fetch stories from the Storybook API endpoint...');
+    try {
+      // For Storybook v6+, we can try to access the stories.json directly
+      const storiesResponse = await page.goto(`${storybookUrl}/stories.json`, {
+        timeout: 10000,
+        waitUntil: 'networkidle'
+      });
+      
+      if (storiesResponse && storiesResponse.status() === 200) {
+        console.log('Found stories.json endpoint');
+        const storiesJson = await storiesResponse.json();
+        
+        if (storiesJson && storiesJson.stories) {
+          console.log(`Found ${Object.keys(storiesJson.stories).length} stories from stories.json`);
+          
+          const components: Record<string, any> = {};
+          
+          // Process stories from the stories.json format
+          Object.entries(storiesJson.stories).forEach(([id, story]: [string, any]) => {
+            const componentId = story.componentId || story.kind || story.title;
+            if (!componentId) return;
+            
+            const componentName = (story.title || story.kind || '').split('/').pop() || 'Unknown';
+            
+            if (!components[componentId]) {
+              components[componentId] = {
+                id: componentId,
+                name: componentName,
+                path: story.title || story.kind || componentId,
+                variants: []
+              };
+            }
+            
+            components[componentId].variants.push({
+              id: id,
+              name: story.name,
+              args: story.parameters?.args || story.args || {}
+            });
+          });
+          
+          return Object.values(components) as Component[];
+        }
+      }
+    } catch (error) {
+      console.log('Error fetching stories.json:', error);
+      // Continue to try other methods
+    }
+    
+    // If stories.json failed, try to extract from the iframe
+    console.log('Falling back to extracting stories from Storybook UI...');
+    
+    // Wait for a bit more time to ensure Storybook is fully loaded
+    await page.waitForTimeout(5000);
+    
+    // Try to find the iframe with the Storybook content
+    const frameHandle = await page.waitForSelector('iframe#storybook-preview-iframe, #storybook-preview iframe')
+      .catch(() => null);
+      
+    if (!frameHandle) {
+      throw new Error('Storybook iframe not found');
+    }
+    
+    const frame = await frameHandle.contentFrame();
+    if (!frame) {
+      throw new Error('Could not access iframe content');
+    }
     
     // Extract component data using page.evaluate to run code in the browser context
     const componentData = await page.evaluate(() => {
       // Access Storybook's internal API
       // Note: This is subject to change with Storybook versions
       const win = window as any;
+      
+      function logAvailableAPIs() {
+        const apis = [];
+        if (win.__STORYBOOK_CLIENT_API__) apis.push('__STORYBOOK_CLIENT_API__');
+        if (win.__STORYBOOK_STORY_STORE__) apis.push('__STORYBOOK_STORY_STORE__');
+        if (win.__STORYBOOK_PREVIEW__) apis.push('__STORYBOOK_PREVIEW__');
+        if (win.STORYBOOK_STORY_STORE) apis.push('STORYBOOK_STORY_STORE');
+        return apis;
+      }
+      
+      console.log('Available Storybook APIs:', logAvailableAPIs());
       
       // Support different Storybook versions
       let stories;
@@ -68,7 +159,24 @@ export async function getComponents(storybookUrl: string): Promise<Component[]> 
           // Older Storybook versions
           stories = win.__STORYBOOK_CLIENT_API__.raw();
         } else {
-          throw new Error('Could not find Storybook stories data');
+          // Try to find stories in the sidebar
+          const sidebarItems = document.querySelectorAll('[data-nodetype="story"]');
+          if (sidebarItems && sidebarItems.length > 0) {
+            stories = Array.from(sidebarItems).map(item => {
+              const id = item.getAttribute('data-item-id') || '';
+              const title = (item.getAttribute('data-parent-id') || '').split('/');
+              const name = item.textContent || '';
+              
+              return {
+                id,
+                kind: title.join('/'),
+                title: title.join('/'),
+                name
+              };
+            });
+          } else {
+            throw new Error('Could not find Storybook stories data');
+          }
         }
       } catch (e: any) {
         console.error('Error accessing Storybook API:', e);
@@ -120,6 +228,7 @@ export async function getComponents(storybookUrl: string): Promise<Component[]> 
       throw new Error(`Failed to extract components: ${componentData.error}`);
     }
     
+    console.log(`Successfully extracted ${componentData.length} components`);
     return componentData as Component[];
   } catch (error) {
     console.error('Error retrieving components:', error);
