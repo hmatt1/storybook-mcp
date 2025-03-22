@@ -688,8 +688,10 @@ async function runServer() {
           : `Server ready in degraded mode, Storybook not available at ${config.storybookUrl}`
     });
 
-    // No need for a promise that never resolves or an artificial interval
-    // The server will stay running due to the open transport connection
+
+    // The server will stay running
+    setInterval(() => {}, 60000);
+
   } catch (error) {
     logger.error('Failed to initialize server:', formatErrorDetails(error));
     process.exit(1);
