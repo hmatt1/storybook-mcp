@@ -1,6 +1,6 @@
 /**
  * Type definitions for the Storybook MCP Server
- * 
+ *
  * This file contains TypeScript interfaces and types used throughout
  * the application to ensure type safety and improve documentation.
  */
@@ -15,6 +15,12 @@ export interface ServerConfig {
   outputDir: string;
   /** Debug mode for additional logging */
   debug?: boolean;
+  /** Maximum number of connection retries */
+  connectionRetries?: number;
+  /** Delay between connection retries in milliseconds */
+  retryDelay?: number;
+  /** Whether to fail startup if Storybook can't be reached */
+  failOnNoStorybook?: boolean;
 }
 
 /**
@@ -151,4 +157,18 @@ export interface CaptureParams {
   state?: ComponentState;
   /** Viewport dimensions */
   viewport?: Viewport;
+}
+
+/**
+ * Server runtime state
+ */
+export interface ServerState {
+  /** Whether the server is currently running */
+  isRunning: boolean;
+  /** Whether the server is in the process of shutting down */
+  isShuttingDown: boolean;
+  /** Number of active requests being processed */
+  activeRequests: number;
+  /** Whether the server has a valid connection to Storybook */
+  storybookConnected: boolean;
 }
