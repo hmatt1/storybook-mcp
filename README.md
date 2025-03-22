@@ -74,15 +74,28 @@ To use this server with Claude for Desktop, add it to your `claude_desktop_confi
 {
   "mcpServers": {
     "storybook": {
-      "command": "node",
-      "args": ["/path/to/storybook-mcp-server/dist/index.js"],
+      "command": "docker",
+      "args": ["run", "--add-host=host.docker.internal:host-gateway", "hmatt1/storybook-mcp:latest"],
       "env": {
-        "STORYBOOK_URL": "http://localhost:6006",
-        "OUTPUT_DIR": "/path/to/screenshots"
+        "STORYBOOK_URL": "http://host.docker.internal:6006",
+        "OUTPUT_DIR": "/screenshots",
+        "DEBUG": "false"
       }
     }
   }
 }
+```
+
+The environment variables configure how the server operates:
+- `STORYBOOK_URL`: Points to your Storybook instance including the hostname and port (e.g., "http://host.docker.internal:6006"). If your Storybook is running on a non-default port, modify the port number in this URL accordingly.
+- `OUTPUT_DIR`: Specifies where screenshots will be saved inside the container
+- `DEBUG`: Enables additional logging when set to "true"
+
+Examples of different Storybook URL configurations:
+```
+"STORYBOOK_URL": "http://host.docker.internal:6006"     # Default port (6006)
+"STORYBOOK_URL": "http://host.docker.internal:9009"     # Custom port (9009)
+"STORYBOOK_URL": "http://192.168.1.100:6006"            # Using specific IP address
 ```
 
 ## Available Tools
