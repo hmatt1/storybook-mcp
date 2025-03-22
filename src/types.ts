@@ -13,8 +13,8 @@ export interface ServerConfig {
   storybookUrl: string;
   /** Directory to store screenshots */
   outputDir: string;
-  /** Port for the Express server */
-  port?: number;
+  /** Debug mode for additional logging */
+  debug?: boolean;
 }
 
 /**

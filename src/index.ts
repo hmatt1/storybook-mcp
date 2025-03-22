@@ -5,9 +5,8 @@
  * to visually analyze Storybook UI components.
  */
 
-import express, { Request, Response } from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { captureComponent, closeBrowser } from "./screenshot.js";
 import { getComponents } from "./components.js";
@@ -15,30 +14,44 @@ import { checkStorybookConnection, ensureOutputDir, formatErrorDetails } from ".
 import { ServerConfig } from "./types.js";
 
 /**
+ * Redirect console.log to stderr to avoid interfering with JSONRPC communication
+ * This preserves the original console.log function
+ */
+const originalConsoleLog = console.log;
+console.log = (...args) => {
+  console.error(...args);
+};
+
+/**
  * Server configuration
  * Can be overridden with environment variables:
  * - STORYBOOK_URL: URL of your Storybook instance
  * - OUTPUT_DIR: Directory for screenshot output
- * - PORT: Port for the Express server (default: 3001)
+ * - DEBUG: Enable debug mode (default: false)
  */
 const config: ServerConfig = {
   storybookUrl: process.env.STORYBOOK_URL || 'http://localhost:6006',
   outputDir: process.env.OUTPUT_DIR || './screenshots',
-  port: parseInt(process.env.PORT || '3001')
+  debug: process.env.DEBUG === 'true' || false
 };
 
-// Create MCP server
+// Debug logging function that respects the debug flag
+function debugLog(...args: any[]): void {
+  if (config.debug) {
+    console.error('[DEBUG]', ...args);
+  }
+}
+
+// Create MCP server - using McpServer instead of Server
 const server = new McpServer({
   name: "Storybook MCP Server",
   version: "1.0.0"
+}, {
+  capabilities: {
+    tools: {},
+    resources: {}
+  }
 });
-
-// Create Express app
-const app = express();
-app.use(express.json());
-
-// Store active transports for message routing
-const activeTransports = new Map<string, SSEServerTransport>();
 
 /**
  * Main application entry point
@@ -48,10 +61,10 @@ async function main() {
   try {
     // Ensure output directory exists and Storybook is accessible
     await ensureOutputDir(config.outputDir);
-    console.log('Output directory ready:', config.outputDir);
+    console.error('Output directory ready:', config.outputDir);
 
     await checkStorybookConnection(config.storybookUrl);
-    console.log('Storybook connection successful at', config.storybookUrl);
+    console.error('Storybook connection successful at', config.storybookUrl);
 
     // Register a resource to get the list of components
     server.resource(
@@ -59,7 +72,7 @@ async function main() {
       "components://storybook",
       async (uri) => {
         try {
-          console.log('Fetching components for resource...');
+          debugLog('Fetching components for resource...');
           const components = await getComponents(config.storybookUrl);
 
           return {
@@ -89,12 +102,13 @@ async function main() {
     // Register the "components" tool
     server.tool(
       "components",
+      "Get a list of all components in the Storybook instance",
       {}, // No parameters needed
       async () => {
         try {
-          console.log('Fetching components from Storybook...');
+          debugLog('Fetching components from Storybook...');
           const components = await getComponents(config.storybookUrl);
-          console.log(`Found ${components.length} components`);
+          debugLog(`Found ${components.length} components`);
 
           return {
             content: [
@@ -131,6 +145,7 @@ async function main() {
     // Register the "capture" tool
     server.tool(
       "capture",
+      "Capture a screenshot of a Storybook component",
       {
         component: z.string().describe("Component ID to capture"),
         variant: z.string().optional().describe("Variant name (default: 'Default')"),
@@ -193,58 +208,17 @@ async function main() {
       }
     );
 
-    // Define route handlers explicitly
-    const handleSseRequest = (req: Request, res: Response) => {
-      const sessionId = req.query.session as string || Math.random().toString(36).substring(2, 15);
-      console.log(`New SSE connection established: ${sessionId}`);
-
-      // Set necessary headers for SSE
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('Connection', 'keep-alive');
-
-      // Create transport and store it
-      const transport = new SSEServerTransport("/messages", res);
-      activeTransports.set(sessionId, transport);
-
-      // Clean up when client disconnects
-      req.on('close', () => {
-        console.log(`SSE connection closed: ${sessionId}`);
-        activeTransports.delete(sessionId);
-      });
-
-      // Connect to MCP server
-      server.connect(transport).catch(error => {
-        console.error('Error connecting to MCP server:', formatErrorDetails(error));
-      });
-    };
-
-    const handleMessageRequest = (req: Request, res: Response) : void => {
-      const sessionId = req.query.session as string || req.headers['x-session-id'] as string;
-      if (!sessionId || !activeTransports.has(sessionId)) {
-         res.status(404).json({ error: "Session not found" });
-      }
-
-      const transport = activeTransports.get(sessionId);
-      if (!transport) {
-         res.status(500).json({ error: "Transport not available" });
-      }
-
-      transport.handlePostMessage(req, res).catch(error => {
-        console.error('Error handling post message:', formatErrorDetails(error));
-        res.status(500).json({ error: "Failed to process message" });
-      });
-    };
-
-    // Set up routes
-    app.get('/sse', handleSseRequest);
-    app.post('/messages', handleMessageRequest);
+    // Create and connect the transport
+    const transport = new StdioServerTransport();
     
-    // Start the Express server
-    app.listen(config.port, () => {
-      console.log(`Storybook MCP Server running on port ${config.port}`);
-      console.log(`Connected to Storybook at ${config.storybookUrl}`);
-    });
+    // Connect the server to the transport
+    await server.connect(transport);
+    
+    console.error('Storybook MCP Server running with STDIO transport');
+    console.error(`Connected to Storybook at ${config.storybookUrl}`);
+    
+    // We don't need to explicitly wait for anything since the process will
+    // keep running as long as the STDIO streams are open
   } catch (error) {
     console.error('Failed to initialize server:', formatErrorDetails(error));
     process.exit(1);
@@ -253,14 +227,14 @@ async function main() {
 
 // Register process event handlers for clean shutdown
 process.on('SIGINT', () => {
-  console.log('Shutting down server...');
+  console.error('Shutting down server...');
   closeBrowser().then(() => {
     process.exit(0);
   });
 });
 
 process.on('SIGTERM', () => {
-  console.log('Shutting down server...');
+  console.error('Shutting down server...');
   closeBrowser().then(() => {
     process.exit(0);
   });

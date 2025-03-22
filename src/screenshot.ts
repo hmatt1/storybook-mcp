@@ -75,7 +75,7 @@ async function detectStorybookVersion(page: Page): Promise<number> {
     
     if (versionFromMeta) {
       const majorVersion = parseInt(versionFromMeta.split('.')[0], 10);
-      console.log(`Detected Storybook version ${versionFromMeta} from meta tag`);
+      console.error(`Detected Storybook version ${versionFromMeta} from meta tag`);
       return majorVersion;
     }
     
@@ -102,7 +102,7 @@ async function detectStorybookVersion(page: Page): Promise<number> {
       return 6;
     });
   } catch (error) {
-    console.log('Error detecting Storybook version:', error);
+    console.error('Error detecting Storybook version:', error);
     return 6; // Default to oldest supported version
   }
 }
@@ -174,7 +174,7 @@ async function applyComponentState(page: Page, state: ComponentState, sbVersion:
  *   storybookUrl: 'http://localhost:6006',
  *   outputDir: './screenshots'
  * });
- * console.log(`Screenshot saved to ${result.screenshotPath}`);
+ * console.error(`Screenshot saved to ${result.screenshotPath}`);
  * ```
  */
 export async function captureComponent(options: CaptureOptions): Promise<CaptureResult> {
@@ -193,11 +193,11 @@ export async function captureComponent(options: CaptureOptions): Promise<Capture
     // First, visit the main Storybook page to detect the version
     await page.goto(storybookUrl, { 
       timeout: 30000, 
-      waitUntil: 'networkidle' 
+      waitUntil: 'load'
     });
     
     const storybookVersion = await detectStorybookVersion(page);
-    console.log(`Detected Storybook version ${storybookVersion}`);
+    console.error(`Detected Storybook version ${storybookVersion}`);
     
     // Process the component ID to extract the base ID without the variant
     // Format is usually "componentname--variantname"
@@ -226,10 +226,10 @@ export async function captureComponent(options: CaptureOptions): Promise<Capture
       componentUrl = `${storybookUrl}?path=/story/${encodeURIComponent(storyId)}`;
     }
     
-    console.log(`Navigating to: ${componentUrl}`);
+    console.error(`Navigating to: ${componentUrl}`);
     
     // Go to the URL and wait for navigation to complete with a generous timeout
-    const response = await page.goto(componentUrl, { timeout: 30000, waitUntil: 'networkidle' });
+    const response = await page.goto(componentUrl, { timeout: 30000, waitUntil: 'load' });
     
     if (!response || response.status() >= 400) {
       throw new Error(`Failed to navigate to component (status: ${response?.status() || 'unknown'})`);
@@ -242,7 +242,7 @@ export async function captureComponent(options: CaptureOptions): Promise<Capture
     // In Storybook 8, wait for "story rendered" indicator
     if (storybookVersion >= 8) {
       await page.waitForSelector('[data-story-rendered="true"]', { timeout: 5000 })
-        .catch(() => console.log('Story rendered indicator not found, proceeding anyway'));
+        .catch(() => console.error('Story rendered indicator not found, proceeding anyway'));
     }
     
     // Apply component state using the helper function

@@ -13,8 +13,8 @@
     "lint": "eslint src/**/*.ts",
     "test:windows": "npm run build && .\\tests\\run-tests.bat",
     "test:linux": "npm run build && bash ./tests/run-tests.sh",
-    "test": "npm run build && node -e \"process.platform === 'win32' ? require('child_process').execSync('tests\\\\run-tests.bat', {stdio: 'inherit'}) : require('child_process').execSync('chmod +x tests/run-tests.sh && tests/run-tests.sh', {stdio: 'inherit'})\"",
-    "test:integration": "npm run build && node -e \"process.platform === 'win32' ? require('child_process').execSync('tests\\\\run-tests.bat', {stdio: 'inherit'}) : require('child_process').execSync('chmod +x tests/run-tests.sh && tests/run-tests.sh', {stdio: 'inherit'})\"",
+    "test": "npm run build && node tests/run-tests.js",
+    "test:integration": "npm run build && node tests/run-tests.js",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [
@@ -27,12 +27,10 @@
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.7.0",
-    "express": "^5.0.1",
     "playwright": "^1.41.1",
     "zod": "^3.22.4"
   },
   "devDependencies": {
-    "@types/express": "^5.0.1",
     "@types/node": "^20.11.0",
     "docdash": "^2.0.1",
     "eslint": "^8.56.0",

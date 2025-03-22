@@ -15,7 +15,7 @@ import { chromium } from 'playwright';
 export async function ensureOutputDir(outputDir: string): Promise<void> {
   try {
     await fs.mkdir(outputDir, { recursive: true });
-    console.log(`Output directory ready: ${outputDir}`);
+    console.error(`Output directory ready: ${outputDir}`);
   } catch (error) {
     console.error('Failed to create output directory:', error);
     throw new Error(`Failed to create output directory: ${formatErrorDetails(error)}`);
@@ -44,7 +44,7 @@ export async function checkStorybookConnection(storybookUrl: string): Promise<vo
     const page = await context.newPage();
     
     // Try to navigate to the Storybook URL with a reasonable timeout
-    console.log(`Checking connection to Storybook at ${storybookUrl}`);
+    console.error(`Checking connection to Storybook at ${storybookUrl}`);
     
     const response = await page.goto(storybookUrl, { 
       timeout: 30000,
@@ -63,23 +63,23 @@ export async function checkStorybookConnection(storybookUrl: string): Promise<vo
     
     // Capture the page content for debugging
     const content = await page.content();
-    console.log(`Page content length: ${content.length} characters`);
+    console.error(`Page content length: ${content.length} characters`);
     
     // Try to access stories.json directly as a more reliable check
-    console.log('Checking if stories.json endpoint is available...');
+    console.error('Checking if stories.json endpoint is available...');
     try {
       const storiesResponse = await context.newPage().then(p => 
         p.goto(`${storybookUrl}/stories.json`, { timeout: 10000 })
       );
       
       if (storiesResponse && storiesResponse.status() === 200) {
-        console.log('stories.json endpoint is available');
+        console.error('stories.json endpoint is available');
         return; // Successfully confirmed Storybook is running
       } else {
-        console.log(`stories.json endpoint returned status: ${storiesResponse?.status() || 'unknown'}`);
+        console.error(`stories.json endpoint returned status: ${storiesResponse?.status() || 'unknown'}`);
       }
     } catch (error) {
-      console.log(`Could not access stories.json: ${formatErrorDetails(error)}`);
+      console.error(`Could not access stories.json: ${formatErrorDetails(error)}`);
       // Continue with alternative checks
     }
     
@@ -111,7 +111,7 @@ export async function checkStorybookConnection(storybookUrl: string): Promise<vo
       };
     });
     
-    console.log('Storybook detection results:', storybookInfo);
+    console.error('Storybook detection results:', storybookInfo);
     
     if (!storybookInfo.detected) {
       // Look for any evidence this is Storybook
@@ -121,7 +121,7 @@ export async function checkStorybookConnection(storybookUrl: string): Promise<vo
         content.toLowerCase().includes('storybook')
       );
       
-      console.log('Additional checks:', {
+      console.error('Additional checks:', {
         title,
         hasStorybookInTitle,
         hasStorybookInBody
@@ -130,11 +130,11 @@ export async function checkStorybookConnection(storybookUrl: string): Promise<vo
       if (!hasStorybookInTitle && !hasStorybookInBody && !storybookInfo.hasAnyIframe) {
         throw new Error(`URL ${storybookUrl} doesn't appear to be a valid Storybook instance`);
       } else {
-        console.log('Page appears to be Storybook despite missing API detection');
+        console.error('Page appears to be Storybook despite missing API detection');
       }
     }
     
-    console.log(`Successfully connected to Storybook at ${storybookUrl}`);
+    console.error(`Successfully connected to Storybook at ${storybookUrl}`);
   } catch (error) {
     console.error(`Failed to connect to Storybook at ${storybookUrl}:`, error);
     throw new Error(`Failed to connect to Storybook at ${storybookUrl}: ${formatErrorDetails(error)}`);

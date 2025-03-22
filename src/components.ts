@@ -15,7 +15,7 @@ import { Component, ComponentVariant } from './types.js';
  * @example
  * ```ts
  * const components = await getComponents('http://localhost:6006');
- * console.log(`Found ${components.length} components`);
+ * console.error(`Found ${components.length} components`);
  * ```
  */
 export async function getComponents(storybookUrl: string): Promise<Component[]> {
@@ -26,49 +26,49 @@ export async function getComponents(storybookUrl: string): Promise<Component[]> 
   const page = await context.newPage();
   
   try {
-    // Go to Storybook URL and wait for network to idle
-    console.log(`Navigating to Storybook at ${storybookUrl}`);
+    // Go to Storybook URL and wait for load
+    console.error(`Navigating to Storybook at ${storybookUrl}`);
     await page.goto(storybookUrl, { 
       timeout: 30000,
-      waitUntil: 'networkidle'
+      waitUntil: 'load'
     });
     
     // Wait for Storybook to initialize by checking for iframe
-    console.log('Waiting for Storybook iframe to load...');
+    console.error('Waiting for Storybook iframe to load...');
     const iframePresent = await page.waitForSelector('iframe#storybook-preview-iframe, #storybook-preview iframe', { 
       timeout: 15000,
       state: 'attached'
     }).then(() => true).catch(() => false);
     
     if (!iframePresent) {
-      console.log('Storybook iframe not found, checking alternative selectors...');
+      console.error('Storybook iframe not found, checking alternative selectors...');
       
       // Try to find any iframe
       const anyIframe = await page.locator('iframe').count();
-      console.log(`Found ${anyIframe} iframes on the page`);
+      console.error(`Found ${anyIframe} iframes on the page`);
       
       // Dump the page HTML for debugging
       const html = await page.content();
-      console.log('Page HTML (first 500 chars):', html.substring(0, 500));
+      console.error('Page HTML (first 500 chars):', html.substring(0, 500));
       
       throw new Error('Could not find Storybook iframe');
     }
     
     // First try to fetch from Storybook's API for Storybook 8.x
-    console.log('Attempting to fetch stories from the Storybook API endpoints...');
+    console.error('Attempting to fetch stories from the Storybook API endpoints...');
     try {
       // For Storybook v8+, first try to access the stories index
       const indexResponse = await page.goto(`${storybookUrl}/index.json`, {
         timeout: 10000,
-        waitUntil: 'networkidle'
+        waitUntil: 'load'
       });
       
       if (indexResponse && indexResponse.status() === 200) {
-        console.log('Found index.json endpoint (Storybook 8+)');
+        console.error('Found index.json endpoint (Storybook 8+)');
         const indexJson = await indexResponse.json();
         
         if (indexJson && (indexJson.entries || indexJson.stories)) {
-          console.log('Successfully retrieved stories from index.json');
+          console.error('Successfully retrieved stories from index.json');
           
           // Process stories from the index.json format (Storybook 8+)
           const components: Record<string, any> = {};
@@ -106,18 +106,18 @@ export async function getComponents(storybookUrl: string): Promise<Component[]> 
       }
       
       // Fall back to stories.json for Storybook v6-7
-      console.log('Falling back to stories.json endpoint...');
+      console.error('Falling back to stories.json endpoint...');
       const storiesResponse = await page.goto(`${storybookUrl}/stories.json`, {
         timeout: 10000,
-        waitUntil: 'networkidle'
+        waitUntil: 'load'
       });
       
       if (storiesResponse && storiesResponse.status() === 200) {
-        console.log('Found stories.json endpoint');
+        console.error('Found stories.json endpoint');
         const storiesJson = await storiesResponse.json();
         
         if (storiesJson && storiesJson.stories) {
-          console.log(`Found ${Object.keys(storiesJson.stories).length} stories from stories.json`);
+          console.error(`Found ${Object.keys(storiesJson.stories).length} stories from stories.json`);
           
           const components: Record<string, any> = {};
           
@@ -148,12 +148,12 @@ export async function getComponents(storybookUrl: string): Promise<Component[]> 
         }
       }
     } catch (error) {
-      console.log('Error fetching stories from API endpoint:', error);
+      console.error('Error fetching stories from API endpoint:', error);
       // Continue to try other methods
     }
     
     // If static files failed, try to extract from the iframe
-    console.log('Falling back to extracting stories from Storybook UI...');
+    console.error('Falling back to extracting stories from Storybook UI...');
     
     // Wait for a bit more time to ensure Storybook is fully loaded
     await page.waitForTimeout(5000);
@@ -187,7 +187,7 @@ export async function getComponents(storybookUrl: string): Promise<Component[]> 
         return apis;
       }
       
-      console.log('Available Storybook APIs:', logAvailableAPIs());
+      console.error('Available Storybook APIs:', logAvailableAPIs());
       
       // Support different Storybook versions
       let stories;
@@ -285,7 +285,7 @@ export async function getComponents(storybookUrl: string): Promise<Component[]> 
       throw new Error(`Failed to extract components: ${componentData.error}`);
     }
     
-    console.log(`Successfully extracted ${componentData.length} components`);
+    console.error(`Successfully extracted ${componentData.length} components`);
     return componentData as Component[];
   } catch (error) {
     console.error('Error retrieving components:', error);

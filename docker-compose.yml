@@ -12,17 +12,18 @@ services:
       retries: 3
       start_period: 10s
 
-  mcp-server:
+  mcp-test:
     build:
       context: .
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
+      dockerfile: Dockerfile.test
     environment:
-      - STORYBOOK_URL=http://storybook:6006
-      - OUTPUT_DIR=/screenshots
+      - TEST_STORYBOOK_URL=http://storybook:6006
+      - TEST_OUTPUT_DIR=/screenshots
+      - DEBUG=true
     depends_on:
       storybook:
         condition: service_healthy
     volumes:
       - ./test-output:/screenshots
+    # Run the tests instead of the server
+    command: node tests/run-tests.js

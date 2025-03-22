@@ -7,7 +7,7 @@ A lightweight server that enables AI assistants to visually analyze Storybook UI
 - Discover available Storybook components and their variants
 - Capture screenshots of components in different states (default, hover, focus, active)
 - Customize viewport sizes for responsive testing
-- Docker support for easy deployment
+- Stdio transport for seamless integration with Claude for Desktop and other MCP clients
 
 ## Prerequisites
 
@@ -44,11 +44,31 @@ You can configure the server using environment variables:
 
 - `STORYBOOK_URL`: URL of your Storybook instance (default: http://localhost:6006)
 - `OUTPUT_DIR`: Directory for screenshot output (default: ./screenshots)
+- `DEBUG`: Enable debug mode with additional logging (default: false)
 
 Example:
 
 ```bash
 STORYBOOK_URL=http://mystorybook.example.com:6006 OUTPUT_DIR=./my-screenshots npm start
+```
+
+## Integration with Claude for Desktop
+
+To use this server with Claude for Desktop, add it to your `claude_desktop_config.json` file:
+
+```json
+{
+  "mcpServers": {
+    "storybook": {
+      "command": "node",
+      "args": ["/path/to/storybook-mcp-server/dist/index.js"],
+      "env": {
+        "STORYBOOK_URL": "http://localhost:6006",
+        "OUTPUT_DIR": "/path/to/screenshots"
+      }
+    }
+  }
+}
 ```
 
 ## Available Tools
@@ -58,13 +78,6 @@ The server implements the Model Context Protocol (MCP) and provides the followin
 ### `components`
 
 Lists all available Storybook components and their variants.
-
-**Usage**:
-```json
-{
-  "tool": "components"
-}
-```
 
 **Response**:
 ```json
@@ -100,17 +113,17 @@ Captures a screenshot of a component in a specific state and viewport size.
 **Parameters**:
 - `component`: Component ID to capture (required)
 - `variant`: Variant name (default: "Default")
-- `state`: Component state - "default", "hover", "focus", or "active" (default: "default")
-- `width`: Viewport width in pixels (default: 1024)
-- `height`: Viewport height in pixels (default: 768)
+- `state`: Component state with optional hover, focus and active properties
+- `viewport`: Viewport dimensions with optional width and height in pixels
 
-**Usage**:
+**Example Parameters**:
 ```json
 {
-  "tool": "capture",
-  "parameters": {
-    "component": "button--primary",
-    "state": "hover",
+  "component": "button--primary",
+  "state": {
+    "hover": true
+  },
+  "viewport": {
     "width": 375,
     "height": 667
   }
@@ -123,7 +136,9 @@ Captures a screenshot of a component in a specific state and viewport size.
   "success": true,
   "component": "button--primary",
   "variant": "Primary",
-  "state": "hover",
+  "state": {
+    "hover": true
+  },
   "viewport": {
     "width": 375,
     "height": 667
@@ -131,6 +146,53 @@ Captures a screenshot of a component in a specific state and viewport size.
   "screenshotUrl": "file:///app/screenshots/button--primary_hover_375x667.png",
   "screenshotPath": "/app/screenshots/button--primary_hover_375x667.png"
 }
+```
+
+## Available Resources
+
+### components-list
+
+Provides a detailed list of all components and their variants in the Storybook instance. This can be accessed as a resource with URI `components://storybook`.
+
+## Testing
+
+### Local Testing
+
+Run the integration tests locally:
+
+```bash
+# Ensure your Storybook instance is running at http://localhost:6006
+npm test
+```
+
+This will:
+1. Build the project
+2. Spawn the MCP server as a subprocess
+3. Communicate with it via STDIO using the MCP protocol
+4. Verify that tools and resources are working correctly
+
+### Docker Testing
+
+You can also run the tests using Docker Compose, which will:
+1. Start a test Storybook instance
+2. Run the tests against that Storybook
+
+```bash
+# Run tests in Docker
+docker-compose up --build
+```
+
+The test results will be visible in the Docker logs.
+
+### Test Environment Variables
+
+You can customize the test environment:
+
+- `TEST_STORYBOOK_URL`: URL of Storybook to test against
+- `TEST_OUTPUT_DIR`: Directory for test screenshots
+
+```bash
+TEST_STORYBOOK_URL=http://my-storybook:6006 TEST_OUTPUT_DIR=./custom-test-output npm test
 ```
 
 ## Docker Support
@@ -142,13 +204,13 @@ Build and run the server in a Docker container:
 docker build -t storybook-mcp-server .
 
 # Run the container
-docker run -p 3000:3000 --add-host=host.docker.internal:host-gateway storybook-mcp-server
+docker run --add-host=host.docker.internal:host-gateway storybook-mcp-server
 ```
 
 The Docker container connects to the Storybook instance running on your host machine via `host.docker.internal:6006`. You can override this by setting the `STORYBOOK_URL` environment variable:
 
 ```bash
-docker run -p 3000:3000 -e STORYBOOK_URL=http://mystorybook.example.com:6006 storybook-mcp-server
+docker run -e STORYBOOK_URL=http://mystorybook.example.com:6006 storybook-mcp-server
 ```
 
 ### Connecting to Storybook from Docker
@@ -160,13 +222,13 @@ When running the MCP server in Docker and connecting to a Storybook instance run
 If you're using Docker Desktop (Mac or Windows), the special DNS name `host.docker.internal` points to your host machine:
 
 ```bash
-docker run -p 3000:3000 -e STORYBOOK_URL=http://host.docker.internal:6006 storybook-mcp-server
+docker run -e STORYBOOK_URL=http://host.docker.internal:6006 storybook-mcp-server
 ```
 
 For Linux hosts, you need to add the `--add-host` flag:
 
 ```bash
-docker run -p 3000:3000 --add-host=host.docker.internal:host-gateway -e STORYBOOK_URL=http://host.docker.internal:6006 storybook-mcp-server
+docker run --add-host=host.docker.internal:host-gateway -e STORYBOOK_URL=http://host.docker.internal:6006 storybook-mcp-server
 ```
 
 In docker-compose.yml:
@@ -206,7 +268,7 @@ ip addr show | grep "inet " | grep -v 127.0.0.1
 ipconfig
 
 # Then use the IP in your Docker command
-docker run -p 3000:3000 -e STORYBOOK_URL=http://192.168.1.100:6006 storybook-mcp-server
+docker run -e STORYBOOK_URL=http://192.168.1.100:6006 storybook-mcp-server
 ```
 
 #### Running Storybook for Docker Access
@@ -247,14 +309,6 @@ Run ESLint:
 
 ```bash
 npm run lint
-```
-
-### Testing
-
-Run the integration tests:
-
-```bash
-npm test
 ```
 
 ## License
