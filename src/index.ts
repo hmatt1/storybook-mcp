@@ -38,7 +38,7 @@ const server = new Server(
 // Define tools
 const COMPONENTS_TOOL: Tool = {
     name: "components",
-    description: "List all available Storybook components",
+    description: "List all available Storybook components and variants",
     inputSchema: {
         type: "object",
         properties: {},
@@ -52,13 +52,18 @@ const CAPTURE_TOOL: Tool = {
     inputSchema: {
         type: "object",
         properties: {
-            component: {
+            componentId: {
                 type: "string",
-                description: "The name of the component to capture",
+                description: "The id of the component to capture",
             },
             variant: {
                 type: "string",
                 description: "The variant of the component to capture",
+            },
+            args: {
+                type: "object",
+                description: "The arguments to customize the component",
+                properties: {}
             },
             state: {
                 type: "object",
@@ -78,7 +83,7 @@ const CAPTURE_TOOL: Tool = {
                 description: "Viewport dimensions for the screenshot",
             },
         },
-        required: ["component"],
+        required: ["componentId", "variant"],
     },
 };
 
@@ -97,8 +102,12 @@ async function doComponents() {
             // Only update the ID if the component has at least one variant
             if (component.variants && component.variants.length > 0) {
                 return {
-                    ...component,
-                    id: component.variants[0].id
+                    path: component.path,
+                    id: component.variants[0].id,
+                    variants: component.variants.map(variant => ({
+                        id: variant.id,
+                        args: variant.args,
+                    }))
                 };
             }
             return component;
@@ -127,8 +136,9 @@ async function doComponents() {
 }
 
 async function doCapture(input: {
-    component: string;
-    variant?: string;
+    componentId: string;
+    variant: string;
+    args: Record<string, any>;
     state?: {
         hover?: boolean;
         focus?: boolean;
@@ -141,8 +151,9 @@ async function doCapture(input: {
 }) {
     try {
         const result = await captureComponent({
-            component: input.component,
+            component: input.componentId,
             variant: input.variant || "Default",
+            args: input.args || {},
             storybookUrl: config.storybookUrl,
             outputDir: config.outputDir,
             state: input.state || {},
@@ -155,8 +166,9 @@ async function doCapture(input: {
         // Create metadata as JSON for the test script
         const metadataJson = JSON.stringify({
             success: true,
-            component: input.component,
+            component: input.componentId,
             variant: input.variant || "Default",
+            args: input.args || {},
             screenshotPath: result.screenshotPath || null,
             screenshotUrl: result.screenshotUrl || null
         });
@@ -231,8 +243,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (request.params.name === "capture") {
         console.error("Capture tool", request.params.arguments);
         const input = request.params.arguments as {
-            component: string;
-            variant?: string;
+            componentId: string;
+            variant: string;
+            args: Record<string, any>;
             state?: {
                 hover?: boolean;
                 focus?: boolean;
