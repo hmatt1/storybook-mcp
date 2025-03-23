@@ -200,7 +200,7 @@ export async function checkStorybookConnection(storybookUrl: string): Promise<vo
 
     // Try to navigate to the Storybook URL with a reasonable timeout
     const response = await page.goto(storybookUrl, {
-      timeout: 30000,
+      timeout: 500,
       waitUntil: 'domcontentloaded'
     });
 
