@@ -2,6 +2,31 @@
 
 A lightweight server that enables AI assistants to visually analyze Storybook UI components using the Model Context Protocol (MCP).
 
+```bash
+npm run build
+npx playwright install chromium
+```
+
+Claude desktop config: 
+
+```json
+{
+  "mcpServers": {
+    "storybook": {
+      "command": "node",
+      "args": [
+        "M:/storybook-mcp/dist/index.js"
+      ],
+      "env": {
+        "STORYBOOK_URL": "http://localhost:6006",
+        "OUTPUT_DIR": "M:/screenshots",
+        "DEBUG": "false"
+      }
+    }
+  }
+}
+```
+
 ## Features
 
 - Discover available Storybook components and their variants
