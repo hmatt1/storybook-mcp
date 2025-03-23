@@ -20,6 +20,57 @@ import {
   screenshotComponent
 } from './component-state.js';
 
+function getComponentUrl(component: string, variant: string, storybookUrl: string) {
+  // Input validation
+  if (!component) {
+    console.error('Component parameter is required');
+    return { storyId: '', componentUrl: storybookUrl };
+  }
+
+  // Normalize the component string
+  const normalizedComponent = component.trim();
+
+  // Process the component ID to extract the base ID without the variant
+  let storyId;
+  let urlPath;
+
+  // If component already includes a variant (contains --), we need to handle it correctly
+  if (normalizedComponent.includes('--')) {
+    // Use the component ID as is for the storyId, but ensure proper formatting
+    storyId = normalizedComponent.toLowerCase().replace(/\//g, '-');
+    urlPath = 'story';
+  } else {
+    // Convert potential path structure (with slashes) to the format Storybook expects
+    const formattedComponent = normalizedComponent.toLowerCase().replace(/\//g, '-');
+
+    if (variant && variant.trim()) {
+      // If we have a non-empty variant, use the story path
+      const formattedVariant = prepareForStorybookUrl(variant);
+      storyId = `${formattedComponent}--${formattedVariant}`;
+      urlPath = 'story';
+    } else {
+      // For components without variants, use the docs path
+      storyId = `${formattedComponent}--docs`;
+      urlPath = 'docs';
+    }
+  }
+
+  console.log(`Component: ${component}, Variant: ${variant}, StoryId: ${storyId}, Path: ${urlPath}`);
+
+  // Ensure the storybookUrl is valid
+  if (!storybookUrl) {
+    console.error('Storybook URL is required');
+    return { storyId, componentUrl: '' };
+  }
+
+  // Ensure the storybookUrl has a trailing slash if it doesn't end with one
+  const baseUrl = storybookUrl.endsWith('/') ? storybookUrl : `${storybookUrl}/`;
+
+  // Construct the final URL
+  const componentUrl = `${baseUrl}?path=/${urlPath}/${encodeURIComponent(storyId)}`;
+  return { storyId, componentUrl };
+}
+
 /**
  * Capture a screenshot of a Storybook component
  *
@@ -34,15 +85,17 @@ import {
 export async function captureComponent(options: CaptureOptions): Promise<CaptureResult> {
   const { component, variant, state, viewport, storybookUrl, outputDir: configuredOutputDir, args } = options;
 
+  console.error("Options:", options);
+
   // Validate and prepare the output directory
   console.error(`Original output directory: ${configuredOutputDir}`);
   const outputDir = await validateOutputDirectory(configuredOutputDir);
-  
+
   try {
     // Ensure the output directory exists
     await fs.mkdir(outputDir, { recursive: true });
     console.error(`Created directory: ${outputDir}`);
-    
+
     // Test if directory is writable
     const testFile = path.join(outputDir, '.write-test');
     await fs.writeFile(testFile, 'test');
@@ -71,33 +124,7 @@ export async function captureComponent(options: CaptureOptions): Promise<Capture
 
     const storybookVersion = await detectStorybookVersion(page);
     console.error(`Detected Storybook version ${storybookVersion}`);
-
-    // Process the component ID to extract the base ID without the variant
-    let storyId;
-
-    // If component already includes a variant (contains --), we need to handle it correctly
-    if (component.includes('--')) {
-      // Use the component ID as is
-      storyId = component;
-    } else {
-      // Format the variant name for Storybook URL
-      const formattedVariant = prepareForStorybookUrl(variant);
-      storyId = `${component}--${formattedVariant}`;
-    }
-
-    console.error(`Component: ${component}, Variant: ${variant}, StoryId: ${storyId}`);
-
-    // Properly format the URL for Storybook
-    // Ensure the storybookUrl has a trailing slash if it doesn't end with one
-    const baseUrl = storybookUrl.endsWith('/') ? storybookUrl : `${storybookUrl}/`;
-    
-    // Format the storyId for the URL:
-    // 1. Convert to lowercase for consistency
-    // 2. Replace slashes with hyphens for hierarchical components
-    const formattedStoryId = storyId.toLowerCase().replace(/\//g, '-');
-    
-    // Construct the final URL
-    let componentUrl = `${baseUrl}?path=/story/${encodeURIComponent(formattedStoryId)}`;
+    let {storyId, componentUrl} = getComponentUrl(component, variant, storybookUrl);
 
     // Add args to URL if provided
     if (args && Object.keys(args).length > 0) {

@@ -1,3 +1,4 @@
+// file: src/index.ts
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -9,6 +10,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { captureComponent } from "./screenshot.js";
 import { getComponents } from "./components.js";
+import fs from 'fs';
 
 // Redirect console.log to stderr
 console.log = (...args) => console.error(...args);
@@ -86,29 +88,34 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 }));
 
 // Function implementations
-
-
-
-// Function implementations
 async function doComponents() {
     try {
         const components = await getComponents(config.storybookUrl);
+
+        // Map over the components and update each component's ID to use its first variant's ID
+        const updatedComponents = components.map(component => {
+            // Only update the ID if the component has at least one variant
+            if (component.variants && component.variants.length > 0) {
+                return {
+                    ...component,
+                    id: component.variants[0].id
+                };
+            }
+            return component;
+        });
+
         const componentsData = {
-            count: components.length,
-            components
+            success: true,
+            count: updatedComponents.length,
+            updatedComponents
         };
 
-        // Format the response as a text content for better readability
-        const componentsText = `Found ${componentsData.count} components:\n` +
-            componentsData.components.map(comp =>
-                `- ${comp.name} (${comp.variants.length} variants)`
-            ).join('\n');
-
+        // Return JSON data as a JSON string in the text content
         return {
             content: [
                 {
                     type: "text",
-                    text: componentsText
+                    text: JSON.stringify(componentsData)
                 }
             ],
             _meta: {}
@@ -145,25 +152,72 @@ async function doCapture(input: {
             }
         });
 
-        // Format the capture result as text content
-        const captureText = `Screenshot captured:
-Component: ${input.component}
-Variant: ${input.variant || "Default"}
-File: ${result.screenshotPath || "Unknown"}
-URL: ${result.screenshotUrl || "Unknown"}`;
+        // Create metadata as JSON for the test script
+        const metadataJson = JSON.stringify({
+            success: true,
+            component: input.component,
+            variant: input.variant || "Default",
+            screenshotPath: result.screenshotPath || null,
+            screenshotUrl: result.screenshotUrl || null
+        });
+
+        // Check if the screenshot file exists
+        if (result.screenshotPath && fs.existsSync(result.screenshotPath)) {
+            // Read the image file and convert to base64
+            const imageBuffer = fs.readFileSync(result.screenshotPath);
+            const base64Image = imageBuffer.toString('base64');
+
+            // Determine MIME type based on file extension
+            const mimeType = result.screenshotPath.endsWith('.png')
+                ? 'image/png'
+                : 'image/jpeg';
+
+            return {
+                content: [
+                    // Include the metadata as text
+                    {
+                        type: "text",
+                        text: metadataJson
+                    },
+                    // Include the actual image
+                    {
+                        type: "image",
+                        data: base64Image,
+                        mimeType: mimeType
+                    }
+                ],
+                _meta: {}
+            };
+        } else {
+            // If no image file, just return metadata
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: metadataJson
+                    }
+                ],
+                _meta: {}
+            };
+        }
+    } catch (error) {
+        console.error('Error capturing component:', error);
+
+        // Return a structured error response
+        const errorData = JSON.stringify({
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error'
+        });
 
         return {
             content: [
                 {
                     type: "text",
-                    text: captureText
+                    text: errorData
                 }
             ],
             _meta: {}
         };
-    } catch (error) {
-        console.error('Error capturing component:', error);
-        throw new McpError(ErrorCode.InternalError, 'Failed to capture component');
     }
 }
 

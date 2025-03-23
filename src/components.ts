@@ -59,7 +59,7 @@ export async function getComponents(storybookUrl: string): Promise<Component[]> 
     try {
       // For Storybook v8+, first try to access the stories index
       const indexResponse = await page.goto(`${storybookUrl}/index.json`, {
-        timeout: 10000,
+        timeout: 1000,
         waitUntil: 'load'
       });
       
@@ -108,7 +108,7 @@ export async function getComponents(storybookUrl: string): Promise<Component[]> 
       // Fall back to stories.json for Storybook v6-7
       console.error('Falling back to stories.json endpoint...');
       const storiesResponse = await page.goto(`${storybookUrl}/stories.json`, {
-        timeout: 10000,
+        timeout: 1000,
         waitUntil: 'load'
       });
       
