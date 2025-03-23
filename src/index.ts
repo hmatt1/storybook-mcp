@@ -102,8 +102,15 @@ process.on('unhandledRejection', error => console.error('Unhandled rejection:', 
 const transport = new StdioServerTransport();
 transport.onerror = error => console.error('Transport error:', error);
 
-await server.connect(transport);
-console.error('Storybook MCP Server running');
 
-// Keep the process running
-setInterval(() => {}, 3600000).unref();
+try {
+    await server.connect(transport);
+    console.error('Storybook MCP Server running');
+} catch (error) {
+    console.error('Failed to connect server:', error);
+    process.exit(1);
+}
+
+setInterval(() => {
+    console.error('Heartbeat check - server still running');
+}, 10000);
